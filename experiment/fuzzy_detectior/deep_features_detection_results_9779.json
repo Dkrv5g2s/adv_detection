@@ -1,0 +1,50 @@
+{
+  "seed": 9779,
+  "base_accuracy": 0.995,
+  "attack_params": {
+    "fgsm": {
+      "eps": 0.3917203133440067
+    },
+    "pgd": {
+      "eps": 0.26340665426424864,
+      "max_iter": 67
+    }
+  },
+  "attack_effectiveness": {
+    "fgsm": {
+      "clean_accuracy": 0.993,
+      "adversarial_accuracy": 0.319,
+      "attack_success_rate": 0.681
+    },
+    "pgd": {
+      "clean_accuracy": 0.993,
+      "adversarial_accuracy": 0.378,
+      "attack_success_rate": 0.622
+    }
+  },
+  "detection_results": {
+    "fgsm": {
+      "accuracy": 0.8111111111111111,
+      "precision": 0.8361204013377926,
+      "recall": 0.8741258741258742,
+      "f1": 0.8547008547008547,
+      "auc": 0.7834939450793109,
+      "num_rules": 45
+    },
+    "pgd": {
+      "accuracy": 0.8733333333333333,
+      "precision": 0.8742138364779874,
+      "recall": 0.9423728813559322,
+      "f1": 0.9070146818923328,
+      "auc": 0.8390924002186987,
+      "num_rules": 44
+    }
+  },
+  "summary_metrics": {
+    "avg_detection_accuracy": 0.8422222222222222,
+    "avg_f1_score": 0.8808577682965937,
+    "avg_precision": 0.85516711890789,
+    "avg_recall": 0.9082493777409032,
+    "avg_rules_per_detector": 44.5
+  }
+}
