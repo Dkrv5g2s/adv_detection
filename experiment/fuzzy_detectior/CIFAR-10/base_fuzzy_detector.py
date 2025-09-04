@@ -5,8 +5,8 @@ import numpy as np
 import torch
 import warnings
 
-from models import SimpleCNN
-from data_utils import load_mnist
+from models import CIFAR10CNN
+from data_utils import load_cifar10
 from model_training import train_classifier, eval_classifier
 from adversarial_attacks import (
     build_art_classifier,
@@ -24,7 +24,7 @@ ATTACK_TYPES = ['fgsm', 'pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = "./simple_mnist_cnn.pth"
+MODEL_PATH = "./cifar10_cnn.pth"
 TRAINING_EPOCHS = 5
 BATCH_SIZE = 256
 
@@ -86,7 +86,7 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
 
 def load_or_train_model(device):
     """載入或訓練分類器模型"""
-    model = SimpleCNN()
+    model = CIFAR10CNN()
 
     if os.path.exists(MODEL_PATH):
         model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
@@ -94,7 +94,7 @@ def load_or_train_model(device):
         print("Loaded existing model.")
     else:
         print("Training new model...")
-        train_loader, test_loader = load_mnist(batch_size=BATCH_SIZE, shuffle_test=True)
+        train_loader, test_loader = load_cifar10(batch_size=BATCH_SIZE, shuffle_test=True)
         model = train_classifier(model, train_loader, test_loader, device, epochs=TRAINING_EPOCHS)
         torch.save(model.state_dict(), MODEL_PATH)
 
@@ -115,7 +115,7 @@ def main():
     print(f"Training samples: {TRAIN_SAMPLES}, Test samples: {TEST_SAMPLES}")
 
     # 載入資料
-    train_loader, test_loader = load_mnist(batch_size=BATCH_SIZE, shuffle_test=True)
+    train_loader, test_loader = load_cifar10(batch_size=BATCH_SIZE, shuffle_test=True)
 
     # 訓練或載入分類器
     model = load_or_train_model(device)
@@ -130,7 +130,7 @@ def main():
     # === 第一階段：產生訓練用對抗樣本 ===
     print("\n=== Phase 1: Generating training adversarial samples ===")
     train_adv_samples, attack_params = generate_adversarial_samples(
-        art_clf, test_loader,
+        art_clf, train_loader,
         attack_types=ATTACK_TYPES,  # 使用全域設定
         max_samples=TRAIN_SAMPLES
     )

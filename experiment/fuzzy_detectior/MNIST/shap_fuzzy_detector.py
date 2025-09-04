@@ -24,7 +24,7 @@ ATTACK_TYPES = ['fgsm', 'pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = "./simple_mnist_cnn.pth"
+MODEL_PATH = "simple_mnist_cnn.pth"
 TRAINING_EPOCHS = 5
 BATCH_SIZE = 256
 
@@ -126,7 +126,7 @@ def main():
     # === 第一階段：產生訓練用對抗樣本 ===
     print("\n=== Phase 1: Generating training adversarial samples ===")
     train_adv_samples, attack_params = generate_adversarial_samples(
-        art_clf, test_loader,
+        art_clf, train_loader,
         attack_types=ATTACK_TYPES,
         max_samples=TRAIN_SAMPLES
     )
