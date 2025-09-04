@@ -48,22 +48,6 @@ class SimpleCNN(nn.Module):
         self.fc2 = nn.Linear(512, 128)
         self.fc3 = nn.Linear(128, num_classes)
 
-    def forward_features(self, x):
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = self.pool1(x)
-
-        x = F.relu(self.bn3(self.conv3(x)))
-        x = F.relu(self.bn4(self.conv4(x)))
-        x = self.pool2(x)
-
-        x = torch.flatten(x, 1)
-        x = self.dropout(x)
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        features = F.relu(self.fc2(x))  # 128維特徵向量
-        return features
-
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
@@ -171,7 +155,7 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
         y_batch = np.concatenate([y for x, y in batch_data], axis=0)
         all_batches.append((x_batch, y_batch))
 
-    # 設定攻擊參數（增強攻擊強度）
+    # 設定攻擊參數
     attacks = {}
     attack_params = {}
 
@@ -181,7 +165,7 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
         attacks['fgsm'] = FastGradientMethod(estimator=art_clf, eps=eps)
 
     if 'pgd' in attack_types:
-        eps = np.random.uniform(0.1, 0.25)
+        eps = np.random.uniform(0.2, 0.4)
         max_iter = np.random.randint(80, 150)
         eps_step = eps / max_iter
         attack_params['pgd'] = {'eps': eps, 'max_iter': max_iter}
@@ -230,6 +214,18 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
             results[key]['y'] = np.concatenate(results[key]['y'], axis=0)
 
     return results, attack_params
+
+
+# 添加缺少的 get_logits 函數
+def get_logits(model, X, batch_size=256):
+    model.eval()
+    logits = []
+    with torch.no_grad():
+        for i in range(0, len(X), batch_size):
+            batch = torch.from_numpy(X[i:i + batch_size]).float().to(device)
+            batch_logits = model(batch)
+            logits.append(batch_logits.cpu().numpy())
+    return np.concatenate(logits, axis=0)
 
 
 # 取得 softmax 機率向量
@@ -305,56 +301,55 @@ class TriangularFuzzySets:
         return mu
 
 
-# 特徵提取函數
-def extract_features(model, images, batch_size=256):
-    model.eval()
-    all_features = []
+def extract_feature_differences(logits_clean, logits_adv):
+    # 將 logits 轉換為機率分佈 (softmax)
+    def softmax(x):
+        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))  # 數值穩定性
+        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
-    with torch.no_grad():
-        for i in range(0, len(images), batch_size):
-            batch_images = torch.tensor(images[i:i + batch_size], dtype=torch.float32).to(device)
-            features = model.forward_features(batch_images)
-            all_features.append(features.cpu().numpy())
+    prob_clean = softmax(logits_clean)
+    prob_adv = softmax(logits_adv)
 
-    return np.concatenate(all_features, axis=0)
+    # 1. 均方誤差 (MSE)
+    mse_diff = np.mean((logits_adv - logits_clean) ** 2, axis=1)
 
+    # 2. 最大支持度差異 (Maximum Support Difference)
+    # 支持度定義為最大機率值
+    max_support_clean = np.max(prob_clean, axis=1)
+    max_support_adv = np.max(prob_adv, axis=1)
+    max_support_diff = np.abs(max_support_clean - max_support_adv)
 
-# 改進特徵提取函數
-def extract_feature_differences(p_clean, p_adv):
-    # 1. MSE差異
-    mse_diff = np.mean((p_adv - p_clean) ** 2, axis=1)
-
-    # 2. 最大機率差異
-    max_clean = np.max(p_clean, axis=1)
-    max_adv = np.max(p_adv, axis=1)
-    max_diff = np.abs(max_clean - max_adv)
-
-    # 3. 熵差異
+    # 3. 熵差異 (Entropy Difference)
     def entropy(p):
-        p_safe = p + 1e-12
+        # 避免 log(0)，加入小常數
+        p_safe = np.clip(p, 1e-12, 1.0)
         return -np.sum(p_safe * np.log(p_safe), axis=1)
 
-    entropy_clean = entropy(p_clean)
-    entropy_adv = entropy(p_adv)
-    entropy_diff = np.abs(entropy_adv - entropy_clean)
+    entropy_clean = entropy(prob_clean)
+    entropy_adv = entropy(prob_adv)
+    entropy_diff = np.abs(entropy_clean - entropy_adv)
 
-    # 4. KL散度
+    # 4. Kullback-Leibler 散度 (KL Divergence)
     def kl_divergence(p, q):
-        p_safe = p + 1e-12
-        q_safe = q + 1e-12
+        # KL(P||Q) = Σ p_i * log(p_i / q_i)
+        p_safe = np.clip(p, 1e-12, 1.0)
+        q_safe = np.clip(q, 1e-12, 1.0)
         return np.sum(p_safe * np.log(p_safe / q_safe), axis=1)
 
-    kl_diff = kl_divergence(p_clean, p_adv)
+    # 計算雙向 KL 散度的平均值以確保對稱性
+    kl_clean_to_adv = kl_divergence(prob_clean, prob_adv)
+    kl_adv_to_clean = kl_divergence(prob_adv, prob_clean)
+    kl_diff = (kl_clean_to_adv + kl_adv_to_clean) / 2
 
     # 5. L1差異
-    l1_diff = np.mean(np.abs(p_adv - p_clean), axis=1)
+    l1_diff = np.mean(np.abs(logits_adv - logits_clean), axis=1)
 
     # 組合所有差異指標
-    all_diffs = [mse_diff, max_diff, entropy_diff, kl_diff, l1_diff]
+    all_diffs = [mse_diff, max_support_diff, entropy_diff, kl_diff, l1_diff]
 
     # 正規化每個特徵到 [0,1]
     normalized_diffs = []
-    for diff in all_diffs:
+    for i, diff in enumerate(all_diffs):
         if diff.max() > diff.min():
             norm_diff = (diff - diff.min()) / (diff.max() - diff.min())
         else:
@@ -377,7 +372,6 @@ class FuzzyRule:
     attack_type: str = None
 
 
-# 改進模糊偵測器類別
 class FuzzyDetector:
     def __init__(self,
                  init_spread=0.15,
@@ -536,7 +530,6 @@ class FuzzyDetector:
         self.rules = [rule for rule in self.rules if rule.potential > min_potential]
 
 
-# 簡化的訓練函數：直接使用對抗樣本，攻擊成功標1，失敗標0
 def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.3):
     # 確保樣本數量一致
     min_samples = min(len(clean_data['images']), len(adv_data['images']))
@@ -553,31 +546,43 @@ def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.
     clean_pred_classes = np.argmax(clean_predictions, axis=1)
     adv_pred_classes = np.argmax(adv_predictions, axis=1)
 
-    # 攻擊成功：原本預測正確，但對抗樣本預測錯誤
+    # 只保留原本預測正確的樣本
     originally_correct = (clean_pred_classes == clean_labels)
-    attack_successful = (adv_pred_classes != adv_labels)
-    successful_attack_mask = originally_correct & attack_successful
 
     print(
         f"[{attack_type}] 原本正確預測: {originally_correct.sum()}/{len(originally_correct)} ({originally_correct.mean():.3f})")
+
+    # 篩選出原本預測正確的樣本
+    correct_indices = np.where(originally_correct)[0]
+
+    # 只使用原本預測正確的樣本
+    clean_images_correct = clean_images[correct_indices]
+    clean_labels_correct = clean_labels[correct_indices]
+    adv_images_correct = adv_images[correct_indices]
+    adv_predictions_correct = adv_predictions[correct_indices]
+
+    # 在原本正確的基礎上，判斷攻擊是否成功
+    adv_pred_classes_correct = np.argmax(adv_predictions_correct, axis=1)
+    attack_successful = (adv_pred_classes_correct != clean_labels_correct)
+
     print(
-        f"[{attack_type}] 攻擊成功: {successful_attack_mask.sum()}/{len(successful_attack_mask)} ({successful_attack_mask.mean():.3f})")
+        f"[{attack_type}] 在正確預測樣本中，攻擊成功: {attack_successful.sum()}/{len(attack_successful)} ({attack_successful.mean():.3f})")
 
-    # 提取CNN特徵
-    clean_features = extract_features(model, clean_images)
-    adv_features = extract_features(model, adv_images)
+    # 獲取乾淨樣本和對抗樣本的logits（只針對原本正確的樣本）
+    clean_logits = get_logits(model, clean_images_correct)
+    adv_logits = get_logits(model, adv_images_correct)
 
-    # 計算特徵差異
-    features_diff = extract_feature_differences(clean_features, adv_features)
+    # 計算logits差異特徵
+    logits_diff = extract_feature_differences(clean_logits, adv_logits)
 
     # 初始化偵測器
     detector = FuzzyDetector(attack_type=attack_type)
 
     # 模糊化特徵
-    features_fuzz = detector.fuzzify(features_diff)
+    features_fuzz = detector.fuzzify(logits_diff)
 
-    # 建立標籤：攻擊成功=1，攻擊失敗=0
-    labels = successful_attack_mask.astype(int)
+    # 建立標籤：攻擊成功=1，攻擊失敗=0（只針對原本正確預測的樣本）
+    labels = attack_successful.astype(int)
 
     X = features_fuzz
     y = labels
@@ -644,9 +649,12 @@ def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.
         'y_pred_proba': y_pred_proba,
         'y_pred_binary': y_pred_binary,
         'num_rules': len(detector.rules),
-        'successful_attacks': successful_attack_mask.sum(),
-        'total_attacks': len(successful_attack_mask),
-        'attack_success_rate': successful_attack_mask.mean()
+        'successful_attacks': attack_successful.sum(),
+        'total_attacks': len(attack_successful),
+        'attack_success_rate': attack_successful.mean(),
+        'originally_correct_count': len(correct_indices),
+        'total_samples': min_samples,
+        'originally_correct_and_attack_successful': attack_successful.sum(),
     }
 
     return results
@@ -720,16 +728,16 @@ def main():
             detection_results[attack_type] = detector_results
 
     # 最終統整表格
-    print("\n" + "=" * 100)
+    print("\n" + "=" * 120)
     print("FINAL RESULTS SUMMARY")
-    print("=" * 100)
+    print("=" * 120)
     print(f"Random seed: {seed} | Base model accuracy: {base_acc:.4f}")
     print()
-    print("訓練策略：直接使用對抗樣本，攻擊成功標記為1，攻擊失敗標記為0")
+    print("訓練策略：僅使用原本正確預測的樣本，攻擊成功標記為1，攻擊失敗標記為0")
     print()
 
     # 表格標題
-    header = f"{'Attack':<12} {'Detection':<10} {'F1-Score':<10} {'AUC':<8} {'Rules':<6} {'Success Rate':<13} {'Successful/Total':<15} {'Params':<25}"
+    header = f"{'Attack':<12} {'Detection':<10} {'F1-Score':<10} {'AUC':<8} {'Rules':<6} {'Success Rate':<13} {'originally_correct_&attack_successful/Total':<40} {'Params':<25}"
     print(header)
     print("-" * len(header))
 
@@ -748,8 +756,10 @@ def main():
             else:
                 params_str = ""
 
-            # 成功攻擊統計
-            successful_total = f"{det_results['successful_attacks']}/{det_results['total_attacks']}"
+            # originally_correct_&attack_successful/Total 統計
+            originally_correct_and_attack_successful = det_results['originally_correct_and_attack_successful']
+            total_samples = det_results['total_samples']
+            success_total = f"{originally_correct_and_attack_successful}/{total_samples}"
 
             print(f"{attack_type.upper():<12} "
                   f"{det_results['accuracy']:<10.4f} "
@@ -757,19 +767,18 @@ def main():
                   f"{det_results['auc']:<8.4f} "
                   f"{det_results['num_rules']:<6} "
                   f"{att_results['attack_success_rate']:<13.4f} "
-                  f"{successful_total:<15} "
+                  f"{success_total:<40} "
                   f"{params_str:<25}")
 
-    print("=" * 100)
+    print("=" * 120)
     print("註解說明：")
     print("- Detection: 偵測器準確率（區分攻擊成功vs攻擊失敗的能力）")
     print("- Success Rate: 攻擊成功率（對抗樣本成功欺騙模型的比例）")
-    print("- Successful/Total: 成功攻擊樣本數/總對抗樣本數")
+    print("- originally_correct_&attack_successful/Total: 原本正確且攻擊成功的樣本數/總樣本數")
     print("- 標籤策略: 攻擊成功=1, 攻擊失敗=0")
-    print("- 不再使用人工加噪聲的乾淨樣本，直接基於真實對抗樣本訓練")
+    print("- 僅使用原本預測正確的樣本進行訓練和測試")
 
 
 if __name__ == '__main__':
     main()
-
 

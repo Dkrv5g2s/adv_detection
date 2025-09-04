@@ -48,22 +48,6 @@ class SimpleCNN(nn.Module):
         self.fc2 = nn.Linear(512, 128)
         self.fc3 = nn.Linear(128, num_classes)
 
-    def forward_features(self, x):
-        """提取倒數第二層特徵（128維）"""
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = self.pool1(x)
-
-        x = F.relu(self.bn3(self.conv3(x)))
-        x = F.relu(self.bn4(self.conv4(x)))
-        x = self.pool2(x)
-
-        x = torch.flatten(x, 1)
-        x = self.dropout(x)
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = F.relu(self.fc2(x))  # 128維特徵
-        return x
 
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
@@ -83,15 +67,14 @@ class SimpleCNN(nn.Module):
 
         return logits
 
-
-# 特徵到輸出的分類器（用於SHAP）
-class FeatureToOutput(nn.Module):
-    def __init__(self, original_model):
+class LogitToSoftmax(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.fc3 = original_model.fc3
+        self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, features):
-        return self.fc3(features)
+    def forward(self, logits):
+        return self.softmax(logits)
+
 
 
 # 資料載入函數
@@ -258,45 +241,56 @@ def get_predictions(model, X, batch_size=256):
 
 
 def generate_shap_signatures(model, images, batch_size=16):
-    """生成SHAP簽名，輸出為128*10=1280維"""
+    """生成SHAP簽名，輸出為10*10=100維"""
     model.eval()
 
-    def extract_features(images):
-        all_features = []
+    def extract_logits(images):
+        """提取模型的logits（最後一層，進入softmax前）"""
+        all_logits = []
         with torch.no_grad():
             for i in range(0, len(images), batch_size):
                 batch_images = torch.tensor(images[i:i + batch_size], dtype=torch.float32).to(device)
-                features = model.forward_features(batch_images)
-                all_features.append(features.cpu().numpy())
-        return np.concatenate(all_features, axis=0)
+                logits = model(batch_images)
+                all_logits.append(logits.cpu().numpy())
+        return np.concatenate(all_logits, axis=0)
 
-    print("Extracting features...")
-    features = extract_features(images)
+    print("Extracting logits...")
+    logits = extract_logits(images)
+    print(f"Logits shape: {logits.shape}")
 
-    # 建立背景樣本和解釋器
-    feature_classifier = FeatureToOutput(model).to(device)
-    background_indices = np.random.choice(len(features), 100, replace=False)
-    background_tensor = torch.tensor(features[background_indices], dtype=torch.float32).to(device)
-    explainer = shap.DeepExplainer(feature_classifier, background_tensor)
+    # 建立logit到softmax的分類器
+    logit_classifier = LogitToSoftmax().to(device)
+
+    # 建立背景樣本
+    background_indices = np.random.choice(len(logits), 100, replace=False)
+    background_tensor = torch.tensor(logits[background_indices], dtype=torch.float32).to(device)
+
+    # 建立SHAP解釋器
+    explainer = shap.DeepExplainer(logit_classifier, background_tensor)
 
     # 分批計算 SHAP 值
-    def compute_shap_values(data):
+    def compute_shap_values(logit_data):
         shap_values = []
-        for i in range(0, len(data), 10):
-            batch_data = torch.tensor(data[i:i + 10], dtype=torch.float32).to(device)
-            shap_values.extend(explainer.shap_values(batch_data))
+        for i in range(0, len(logit_data), 10):
+            batch_data = torch.tensor(logit_data[i:i + 10], dtype=torch.float32).to(device)
+            batch_shap = explainer.shap_values(batch_data)
+            shap_values.extend(batch_shap)
         return np.array(shap_values)
 
     print("Computing SHAP values...")
-    shap_values_clean = compute_shap_values(features)
-    print(f"SHAP values shape: {shap_values_clean.shape}")
+    shap_values_all = compute_shap_values(logits)
+    print(f"SHAP values shape: {shap_values_all.shape}")
 
-    # 特徵生成：SHAP 簽名
     def extract_shap_signature(shap_values):
-        return np.array([sv.flatten() for sv in shap_values])
 
-    signatures = extract_shap_signature(shap_values_clean)
-    print(f"signatures shape: {signatures.shape}")
+        # 直接重塑形狀：將每個樣本的(10, 10)展平為(100,)
+        n_samples = shap_values.shape[0]
+        signatures = shap_values.reshape(n_samples, -1)  # (1000, 100)
+
+        return signatures
+
+    signatures = extract_shap_signature(shap_values_all)
+    print(f"Final signatures shape: {signatures.shape}")
 
     return signatures
 
@@ -361,42 +355,60 @@ class TriangularFuzzySets:
         return mu
 
 
-# 改進特徵提取函數
 def extract_shap_feature_differences(shap_clean, shap_adv):
     """計算SHAP簽名之間的差異特徵"""
-    # 1. MSE差異
+
+    # 將SHAP值轉換為重要性分佈 (絕對值 + softmax)
+    def importance_distribution(shap_values):
+        abs_shap = np.abs(shap_values)
+        # 避免全零情況
+        abs_shap = abs_shap + 1e-12
+        # 轉換為重要性分佈
+        exp_shap = np.exp(abs_shap - np.max(abs_shap, axis=1, keepdims=True))
+        return exp_shap / np.sum(exp_shap, axis=1, keepdims=True)
+
+    importance_clean = importance_distribution(shap_clean)
+    importance_adv = importance_distribution(shap_adv)
+
+    # 1. 均方誤差 (MSE)
     mse_diff = np.mean((shap_adv - shap_clean) ** 2, axis=1)
 
-    # 2. 最大值差異
-    max_clean = np.max(np.abs(shap_clean), axis=1)
-    max_adv = np.max(np.abs(shap_adv), axis=1)
-    max_diff = np.abs(max_clean - max_adv)
+    # 2. 最大重要性差異 (Maximum Importance Difference)
+    # 對應於最大支持度差異，但針對SHAP重要性
+    max_importance_clean = np.max(importance_clean, axis=1)
+    max_importance_adv = np.max(importance_adv, axis=1)
+    max_importance_diff = np.abs(max_importance_clean - max_importance_adv)
 
-    # 3. L1差異
+    # 3. 重要性熵差異 (Importance Entropy Difference)
+    def entropy(p):
+        p_safe = np.clip(p, 1e-12, 1.0)
+        return -np.sum(p_safe * np.log(p_safe), axis=1)
+
+    entropy_clean = entropy(importance_clean)
+    entropy_adv = entropy(importance_adv)
+    entropy_diff = np.abs(entropy_clean - entropy_adv)
+
+    # 4. 重要性分佈KL散度 (Importance Distribution KL Divergence)
+    def kl_divergence(p, q):
+        p_safe = np.clip(p, 1e-12, 1.0)
+        q_safe = np.clip(q, 1e-12, 1.0)
+        return np.sum(p_safe * np.log(p_safe / q_safe), axis=1)
+
+    # 雙向KL散度的平均值
+    kl_clean_to_adv = kl_divergence(importance_clean, importance_adv)
+    kl_adv_to_clean = kl_divergence(importance_adv, importance_clean)
+    kl_diff = (kl_clean_to_adv + kl_adv_to_clean) / 2
+
+    # 5. L1差異
     l1_diff = np.mean(np.abs(shap_adv - shap_clean), axis=1)
 
-    # 4. 符號變化統計
-    sign_changes = np.mean((np.sign(shap_clean) != np.sign(shap_adv)).astype(float), axis=1)
-
-    # 5. 相關係數差異
-    correlation_diffs = []
-    for i in range(len(shap_clean)):
-        try:
-            corr = np.corrcoef(shap_clean[i], shap_adv[i])[0, 1]
-            if np.isnan(corr):
-                corr = 0.0
-            correlation_diffs.append(1 - abs(corr))  # 1表示完全不相關
-        except:
-            correlation_diffs.append(1.0)
-    correlation_diffs = np.array(correlation_diffs)
-
     # 組合所有差異指標
-    all_diffs = [mse_diff, max_diff, l1_diff, sign_changes, correlation_diffs]
+    all_diffs = [mse_diff, max_importance_diff, entropy_diff, kl_diff, l1_diff]
 
     # 正規化每個特徵到 [0,1]
     normalized_diffs = []
-    for diff in all_diffs:
-        if diff.max() > diff.min():
+    for i, diff in enumerate(all_diffs):
+        if len(diff) > 0 and diff.max() > diff.min():
             norm_diff = (diff - diff.min()) / (diff.max() - diff.min())
         else:
             norm_diff = np.zeros_like(diff)
@@ -418,7 +430,7 @@ class FuzzyRule:
     attack_type: str = None
 
 
-# 改進模糊偵測器類別
+
 class FuzzyDetector:
     def __init__(self,
                  init_spread=0.15,
