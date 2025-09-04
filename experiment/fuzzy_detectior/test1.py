@@ -49,7 +49,6 @@ class SimpleCNN(nn.Module):
         self.fc3 = nn.Linear(128, num_classes)
 
     def forward_features(self, x):
-
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.pool1(x)
@@ -308,7 +307,6 @@ class TriangularFuzzySets:
 
 # 特徵提取函數
 def extract_features(model, images, batch_size=256):
-
     model.eval()
     all_features = []
 
@@ -323,7 +321,6 @@ def extract_features(model, images, batch_size=256):
 
 # 改進特徵提取函數
 def extract_feature_differences(p_clean, p_adv):
-
     # 1. MSE差異
     mse_diff = np.mean((p_adv - p_clean) ** 2, axis=1)
 
@@ -351,8 +348,6 @@ def extract_feature_differences(p_clean, p_adv):
 
     # 5. L1差異
     l1_diff = np.mean(np.abs(p_adv - p_clean), axis=1)
-
-
 
     # 組合所有差異指標
     all_diffs = [mse_diff, max_diff, entropy_diff, kl_diff, l1_diff]
@@ -544,40 +539,45 @@ class FuzzyDetector:
         self.rules = [rule for rule in self.rules if rule.potential > min_potential]
 
 
-# 修改訓練函數，加入更多隨機性
+# 修改訓練函數，只將攻擊成功的樣本標記為1
 def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.3):
     # 確保樣本數量一致
     min_samples = min(len(clean_data['images']), len(adv_data['images']))
     clean_images = clean_data['images'][:min_samples]
+    clean_labels = clean_data['labels'][:min_samples]
     adv_images = adv_data['images'][:min_samples]
+    adv_labels = adv_data['labels'][:min_samples]
+
+    # 獲取乾淨樣本和對抗樣本的預測結果
+    clean_predictions = get_predictions(model, clean_images)
+    adv_predictions = get_predictions(model, adv_images)
+
+    # 計算攻擊成功的樣本索引
+    clean_pred_classes = np.argmax(clean_predictions, axis=1)
+    adv_pred_classes = np.argmax(adv_predictions, axis=1)
+
+    # 攻擊成功：原本預測正確，但對抗樣本預測錯誤
+    originally_correct = (clean_pred_classes == clean_labels)
+    attack_successful = (adv_pred_classes != adv_labels)
+    successful_attack_mask = originally_correct & attack_successful
+
+    print(
+        f"[{attack_type}] 原本正確預測: {originally_correct.sum()}/{len(originally_correct)} ({originally_correct.mean():.3f})")
+    print(
+        f"[{attack_type}] 攻擊成功: {successful_attack_mask.sum()}/{len(successful_attack_mask)} ({successful_attack_mask.mean():.3f})")
 
     # 為clean圖片添加微小噪音
-    noise_std = np.random.uniform(0.01, 0.05)  # 隨機噪聲強度
-
-
+    noise_std = np.random.uniform(0.01, 0.05)
     clean_images_noisy = clean_images + np.random.normal(0, noise_std, clean_images.shape)
-    clean_images_noisy = np.clip(clean_images_noisy, 0, 1)  # 確保像素值在合理範圍
+    clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
 
     # 分別提取CNN特徵
-
     clean_features = extract_features(model, clean_images)
     clean_features_noisy = extract_features(model, clean_images_noisy)
     adv_features = extract_features(model, adv_images)
 
     clean_features_diff = extract_feature_differences(clean_features, clean_features_noisy)
     adv_features_diff = extract_feature_differences(clean_features, adv_features)
-
-    # 調試資訊
-    print(
-        f"[{attack_type}] Clean diff stats - mean: {clean_features_diff.mean():.4f}, std: {clean_features_diff.std():.4f}")
-    print(f"[{attack_type}] Adv diff stats - mean: {adv_features_diff.mean():.4f}, std: {adv_features_diff.std():.4f}")
-
-    # 檢查差異是否合理
-    ratio = adv_features_diff.mean() / (clean_features_diff.mean() + 1e-8)
-    print(f"[{attack_type}] Adversarial/Clean ratio: {ratio:.2f}")
-
-    if ratio < 2.0:
-        print(f"[{attack_type}] Warning: Adversarial differences may be too small!")
 
     # 初始化偵測器
     detector = FuzzyDetector(attack_type=attack_type)
@@ -586,13 +586,21 @@ def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.
     clean_features_fuzz = detector.fuzzify(clean_features_diff)
     adv_features_fuzz = detector.fuzzify(adv_features_diff)
 
-    X = np.vstack([clean_features_fuzz, adv_features_fuzz])
-    y = np.hstack([
-        np.zeros(len(clean_features_fuzz)),  # 乾淨樣本 = 0
-        np.ones(len(adv_features_fuzz))  # 對抗樣本 = 1
-    ])
+    # 建立訓練資料，只有攻擊成功的對抗樣本標記為1
+    # 所有乾淨樣本標記為0
+    clean_labels_binary = np.zeros(len(clean_features_fuzz))
 
-    print(f"[{attack_type}] Training data - Clean: {np.sum(y == 0)}, Adversarial: {np.sum(y == 1)}")
+    # 對抗樣本：只有攻擊成功的才標記為1，攻擊失敗的標記為0
+    adv_labels_binary = successful_attack_mask.astype(int)
+
+    X = np.vstack([clean_features_fuzz, adv_features_fuzz])
+    y = np.hstack([clean_labels_binary, adv_labels_binary])
+
+    print(f"[{attack_type}] 訓練資料 - 正常樣本(標籤0): {np.sum(y == 0)}, 成功攻擊樣本(標籤1): {np.sum(y == 1)}")
+
+    # 檢查是否有足夠的正樣本
+    if np.sum(y == 1) < 10:
+        print(f"[{attack_type}] 警告: 成功攻擊樣本太少 ({np.sum(y == 1)})，可能影響訓練效果")
 
     # 分割訓練/測試
     n_train = int(len(X) * (1 - test_ratio))
@@ -602,7 +610,9 @@ def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.
     X_train, X_test = X[train_idx], X[test_idx]
     y_train, y_test = y[train_idx], y[test_idx]
 
-    print(f"[{attack_type}] Train: {len(X_train)}, Test: {len(X_test)}")
+    print(f"[{attack_type}] 訓練集: {len(X_train)}, 測試集: {len(X_test)}")
+    print(f"[{attack_type}] 訓練集標籤分布 - 0: {np.sum(y_train == 0)}, 1: {np.sum(y_train == 1)}")
+    print(f"[{attack_type}] 測試集標籤分布 - 0: {np.sum(y_test == 0)}, 1: {np.sum(y_test == 1)}")
 
     # 隨機打亂訓練順序
     train_indices = np.random.permutation(len(X_train))
@@ -613,11 +623,10 @@ def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.
         detector.update(X_train[i], y_train[i],
                         current_class_samples, X_train[:min(i + 1, 100)])
 
-    # 測試 - 可以選擇使用固定閾值或隨機閾值
+    # 測試
     y_pred_proba = []
     y_pred_binary = []
 
-    # 選項1: 隨機閾值 (保持原有邏輯)
     for i in range(len(X_test)):
         prob = detector.predict_proba(X_test[i])
         y_pred_proba.append(prob)
@@ -625,13 +634,6 @@ def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.
         threshold = 0.5 + np.random.normal(0, 0.05)
         threshold = np.clip(threshold, 0.4, 0.6)
         y_pred_binary.append(1 if prob > threshold else 0)
-
-    # 選項2: 固定閾值 (更穩定的結果)
-    # threshold = 0.5
-    # for i in range(len(X_test)):
-    #     prob = detector.predict_proba(X_test[i])
-    #     y_pred_proba.append(prob)
-    #     y_pred_binary.append(1 if prob > threshold else 0)
 
     # 計算指標
     accuracy = accuracy_score(y_test, y_pred_binary)
@@ -658,7 +660,10 @@ def train_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.
         'y_test': y_test,
         'y_pred_proba': y_pred_proba,
         'y_pred_binary': y_pred_binary,
-        'num_rules': len(detector.rules)
+        'num_rules': len(detector.rules),
+        'successful_attacks': successful_attack_mask.sum(),
+        'total_attacks': len(successful_attack_mask),
+        'attack_success_rate': successful_attack_mask.mean()
     }
 
     return results
@@ -730,18 +735,18 @@ def main():
             clean_data = results['clean']
             adv_data = results[attack_type]
 
-            detector_results = train_fuzzy_detector(model,clean_data, adv_data, attack_type)
+            detector_results = train_fuzzy_detector(model, clean_data, adv_data, attack_type)
             detection_results[attack_type] = detector_results
 
     # 最終統整表格
-    print("\n" + "=" * 85)
+    print("\n" + "=" * 100)
     print("FINAL RESULTS SUMMARY")
-    print("=" * 85)
+    print("=" * 100)
     print(f"Random seed: {seed} | Base model accuracy: {base_acc:.4f}")
     print()
 
     # 表格標題
-    header = f"{'Attack':<12} {'Detection':<10} {'F1-Score':<10} {'AUC':<8} {'Rules':<6} {'Success Rate':<13} {'Params':<25}"
+    header = f"{'Attack':<12} {'Detection':<10} {'F1-Score':<10} {'AUC':<8} {'Rules':<6} {'Success Rate':<13} {'Successful/Total':<15} {'Params':<25}"
     print(header)
     print("-" * len(header))
 
@@ -760,15 +765,24 @@ def main():
             else:
                 params_str = ""
 
+            # 成功攻擊統計
+            successful_total = f"{det_results['successful_attacks']}/{det_results['total_attacks']}"
+
             print(f"{attack_type.upper():<12} "
                   f"{det_results['accuracy']:<10.4f} "
                   f"{det_results['f1']:<10.4f} "
                   f"{det_results['auc']:<8.4f} "
                   f"{det_results['num_rules']:<6} "
                   f"{att_results['attack_success_rate']:<13.4f} "
+                  f"{successful_total:<15} "
                   f"{params_str:<25}")
 
-    print("=" * 85)
+    print("=" * 100)
+    print("註：Detection列顯示的是偵測器準確率，Success Rate是攻擊成功率")
+    print("註：Successful/Total顯示成功攻擊樣本數/總攻擊樣本數")
+    print("註：只有攻擊成功的樣本才被標記為正樣本(1)進行偵測器訓練")
+
 
 if __name__ == '__main__':
     main()
+

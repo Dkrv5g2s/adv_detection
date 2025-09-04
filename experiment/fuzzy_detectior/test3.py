@@ -1,4 +1,3 @@
-# 導入所需套件和設定
 import os
 import random
 import time
@@ -81,6 +80,7 @@ class SimpleCNN(nn.Module):
         x = self.dropout(x)
         x = F.relu(self.fc2(x))
         logits = self.fc3(x)
+
         return logits
 
 
@@ -183,7 +183,7 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
         y_batch = np.concatenate([y for x, y in batch_data], axis=0)
         all_batches.append((x_batch, y_batch))
 
-    # 設定攻擊參數（增強攻擊強度）
+    # 設定攻擊參數
     attacks = {}
     attack_params = {}
 
@@ -257,9 +257,8 @@ def get_predictions(model, X, batch_size=256):
     return np.concatenate(preds, axis=0)
 
 
-# 🔧 修正版本：生成SHAP簽名
-def generate_shap_signatures(model, clean_images, adv_images, batch_size=16):
-    """生成SHAP簽名，確保正確配對比較"""
+def generate_shap_signatures(model, images, batch_size=16):
+    """生成SHAP簽名，輸出為128*10=1280維"""
     model.eval()
 
     def extract_features(images):
@@ -272,17 +271,12 @@ def generate_shap_signatures(model, clean_images, adv_images, batch_size=16):
         return np.concatenate(all_features, axis=0)
 
     print("Extracting features...")
-    # 確保樣本數量一致
-    min_samples = min(len(clean_images), len(adv_images))
-    clean_images = clean_images[:min_samples]
-    adv_images = adv_images[:min_samples]
-
-    clean_features = extract_features(clean_images)
-    adv_features = extract_features(adv_images)
+    features = extract_features(images)
 
     # 建立背景樣本和解釋器
     feature_classifier = FeatureToOutput(model).to(device)
-    background_tensor = torch.tensor(clean_features[:30], dtype=torch.float32).to(device)
+    background_indices = np.random.choice(len(features), 100, replace=False)
+    background_tensor = torch.tensor(features[background_indices], dtype=torch.float32).to(device)
     explainer = shap.DeepExplainer(feature_classifier, background_tensor)
 
     # 分批計算 SHAP 值
@@ -294,23 +288,17 @@ def generate_shap_signatures(model, clean_images, adv_images, batch_size=16):
         return np.array(shap_values)
 
     print("Computing SHAP values...")
-    shap_values_clean = compute_shap_values(clean_features)
-    print(f"Clean SHAP values shape: {shap_values_clean.shape}")
-
-    shap_values_adv = compute_shap_values(adv_features)
-    print(f"Adversarial SHAP values shape: {shap_values_adv.shape}")
+    shap_values_clean = compute_shap_values(features)
+    print(f"SHAP values shape: {shap_values_clean.shape}")
 
     # 特徵生成：SHAP 簽名
     def extract_shap_signature(shap_values):
         return np.array([sv.flatten() for sv in shap_values])
 
-    clean_signatures = extract_shap_signature(shap_values_clean)
-    print(f"Clean signatures shape: {clean_signatures.shape}")
+    signatures = extract_shap_signature(shap_values_clean)
+    print(f"signatures shape: {signatures.shape}")
 
-    adv_signatures = extract_shap_signature(shap_values_adv)
-    print(f"Adversarial signatures shape: {adv_signatures.shape}")
-
-    return clean_signatures, adv_signatures
+    return signatures
 
 
 # 評估攻擊效果的函數
@@ -373,62 +361,37 @@ class TriangularFuzzySets:
         return mu
 
 
-# 🔧 修正版本：特徵差異計算
-def extract_feature_differences(p_clean, p_adv):
-    """
-    計算兩組特徵之間的差異
-    p_clean: 乾淨樣本的特徵 (或SHAP簽名)
-    p_adv: 對抗樣本的特徵 (或SHAP簽名)
-    """
-    # 確保輸入維度一致
-    assert p_clean.shape == p_adv.shape, f"Shape mismatch: {p_clean.shape} vs {p_adv.shape}"
-
+# 改進特徵提取函數
+def extract_shap_feature_differences(shap_clean, shap_adv):
+    """計算SHAP簽名之間的差異特徵"""
     # 1. MSE差異
-    mse_diff = np.mean((p_adv - p_clean) ** 2, axis=1)
+    mse_diff = np.mean((shap_adv - shap_clean) ** 2, axis=1)
 
     # 2. 最大值差異
-    max_clean = np.max(np.abs(p_clean), axis=1)
-    max_adv = np.max(np.abs(p_adv), axis=1)
+    max_clean = np.max(np.abs(shap_clean), axis=1)
+    max_adv = np.max(np.abs(shap_adv), axis=1)
     max_diff = np.abs(max_clean - max_adv)
 
-    # 3. 統計差異（均值差異）
-    mean_clean = np.mean(p_clean, axis=1)
-    mean_adv = np.mean(p_adv, axis=1)
-    mean_diff = np.abs(mean_clean - mean_adv)
+    # 3. L1差異
+    l1_diff = np.mean(np.abs(shap_adv - shap_clean), axis=1)
 
-    # 4. 標準差差異
-    std_clean = np.std(p_clean, axis=1)
-    std_adv = np.std(p_adv, axis=1)
-    std_diff = np.abs(std_clean - std_adv)
+    # 4. 符號變化統計
+    sign_changes = np.mean((np.sign(shap_clean) != np.sign(shap_adv)).astype(float), axis=1)
 
-    # 5. L1差異
-    l1_diff = np.mean(np.abs(p_adv - p_clean), axis=1)
-
-    # 6. 餘弦相似度差異
-    def cosine_similarity(a, b):
-        dot_product = np.sum(a * b, axis=1)
-        norm_a = np.linalg.norm(a, axis=1)
-        norm_b = np.linalg.norm(b, axis=1)
-        return dot_product / (norm_a * norm_b + 1e-12)
-
-    cosine_sim = cosine_similarity(p_clean, p_adv)
-    cosine_diff = 1 - cosine_sim  # 轉換為差異度量
-
-    # 7. 相關係數差異
+    # 5. 相關係數差異
     correlation_diffs = []
-    for i in range(len(p_clean)):
-        if np.std(p_clean[i]) > 1e-12 and np.std(p_adv[i]) > 1e-12:
-            corr = np.corrcoef(p_clean[i], p_adv[i])[0, 1]
-            if not np.isnan(corr):
-                correlation_diffs.append(1 - abs(corr))
-            else:
-                correlation_diffs.append(0.5)
-        else:
-            correlation_diffs.append(0.5)
-    corr_diff = np.array(correlation_diffs)
+    for i in range(len(shap_clean)):
+        try:
+            corr = np.corrcoef(shap_clean[i], shap_adv[i])[0, 1]
+            if np.isnan(corr):
+                corr = 0.0
+            correlation_diffs.append(1 - abs(corr))  # 1表示完全不相關
+        except:
+            correlation_diffs.append(1.0)
+    correlation_diffs = np.array(correlation_diffs)
 
     # 組合所有差異指標
-    all_diffs = [mse_diff, max_diff, mean_diff, std_diff, l1_diff, cosine_diff, corr_diff]
+    all_diffs = [mse_diff, max_diff, l1_diff, sign_changes, correlation_diffs]
 
     # 正規化每個特徵到 [0,1]
     normalized_diffs = []
@@ -549,11 +512,8 @@ class FuzzyDetector:
                     best_output = rule.output
             return best_output
 
-        # 加入小量隨機性避免完美預測
         result = numerator / denominator
-        noise = np.random.normal(0, 0.02)  # 加入2%的隨機噪音
-        result = np.clip(result + noise, 0.0, 1.0)
-        return result
+        return np.clip(result, 0.0, 1.0)
 
     def update(self, x, label, class_samples=None, total_samples=None):
         # online training
@@ -617,42 +577,62 @@ class FuzzyDetector:
         self.rules = [rule for rule in self.rules if rule.potential > min_potential]
 
 
-# 🔧 修正版本：SHAP簽名模糊偵測器訓練函數
-def train_shap_fuzzy_detector(clean_data, adv_data, model, attack_type, test_ratio=0.3):
-    """
-    修正版本：正確處理乾淨樣本和對抗樣本的配對比較
-    """
+# 改進的SHAP簽名模糊偵測器訓練函數：直接使用對抗樣本，攻擊成功標1，攻擊失敗標0
+def train_shap_fuzzy_detector(model, clean_data, adv_data, attack_type, test_ratio=0.3):
+    print(f"[{attack_type}] Starting SHAP fuzzy detector training...")
+
+    # 確保樣本數量一致
+    min_samples = min(len(clean_data['images']), len(adv_data['images']))
+    clean_images = clean_data['images'][:min_samples]
+    clean_labels = clean_data['labels'][:min_samples]
+    adv_images = adv_data['images'][:min_samples]
+    adv_labels = adv_data['labels'][:min_samples]
+
+    # 獲取乾淨樣本和對抗樣本的預測結果
+    clean_predictions = get_predictions(model, clean_images)
+    adv_predictions = get_predictions(model, adv_images)
+
+    # 計算攻擊成功的樣本索引
+    clean_pred_classes = np.argmax(clean_predictions, axis=1)
+    adv_pred_classes = np.argmax(adv_predictions, axis=1)
+
+    # 攻擊成功：原本預測正確，但對抗樣本預測錯誤
+    originally_correct = (clean_pred_classes == clean_labels)
+    attack_successful = (adv_pred_classes != adv_labels)
+    successful_attack_mask = originally_correct & attack_successful
+
+    print(
+        f"[{attack_type}] 原本正確預測: {originally_correct.sum()}/{len(originally_correct)} ({originally_correct.mean():.3f})")
+    print(
+        f"[{attack_type}] 攻擊成功: {successful_attack_mask.sum()}/{len(successful_attack_mask)} ({successful_attack_mask.mean():.3f})")
+
     # 生成SHAP簽名
-    clean_signatures, adv_signatures = generate_shap_signatures(
-        model, clean_data['images'], adv_data['images']
-    )
+    print(f"[{attack_type}] Generating clean SHAP signatures...")
+    clean_signatures = generate_shap_signatures(model, clean_images)
 
-    # 🔧 修正：正確的差異計算
-    # 方案1：為乾淨樣本添加小量噪音作為基線
-    noise_level = 0.01
-    clean_signatures_noisy = clean_signatures + np.random.normal(0, noise_level, clean_signatures.shape)
+    print(f"[{attack_type}] Generating adversarial SHAP signatures...")
+    adv_signatures = generate_shap_signatures(model, adv_images)
 
-    # 乾淨樣本：原始簽名 vs 加噪音簽名（應該有小差異）
-    clean_features_diff = extract_feature_differences(clean_signatures, clean_signatures_noisy)
-
-    # 對抗樣本：乾淨簽名 vs 對抗簽名（應該有較大差異）
-    adv_features_diff = extract_feature_differences(clean_signatures, adv_signatures)
-
-    print(f"Clean features diff shape: {clean_features_diff.shape}")
-    print(f"Adversarial features diff shape: {adv_features_diff.shape}")
-    print(f"Clean diff stats: mean={clean_features_diff.mean():.4f}, std={clean_features_diff.std():.4f}")
-    print(f"Adv diff stats: mean={adv_features_diff.mean():.4f}, std={adv_features_diff.std():.4f}")
+    # 計算SHAP簽名差異
+    features_diff = extract_shap_feature_differences(clean_signatures, adv_signatures)
 
     # 初始化偵測器
     detector = FuzzyDetector(attack_type=attack_type)
 
     # 模糊化特徵
-    clean_features = detector.fuzzify(clean_features_diff)
-    adv_features = detector.fuzzify(adv_features_diff)
+    features_fuzz = detector.fuzzify(features_diff)
 
-    # 建立訓練資料
-    X = np.vstack([clean_features, adv_features])
-    y = np.hstack([np.zeros(len(clean_features)), np.ones(len(adv_features))])
+    # 建立標籤：攻擊成功=1，攻擊失敗=0
+    labels = successful_attack_mask.astype(int)
+
+    X = features_fuzz
+    y = labels
+
+    print(f"[{attack_type}] 訓練資料 - 攻擊失敗(標籤0): {np.sum(y == 0)}, 攻擊成功(標籤1): {np.sum(y == 1)}")
+
+    # 檢查是否有足夠的正樣本
+    if np.sum(y == 1) < 10:
+        print(f"[{attack_type}] 警告: 成功攻擊樣本太少 ({np.sum(y == 1)})，可能影響訓練效果")
 
     # 分割訓練/測試
     n_train = int(len(X) * (1 - test_ratio))
@@ -661,107 +641,15 @@ def train_shap_fuzzy_detector(clean_data, adv_data, model, attack_type, test_rat
 
     X_train, X_test = X[train_idx], X[test_idx]
     y_train, y_test = y[train_idx], y[test_idx]
+
+    print(f"[{attack_type}] 訓練集: {len(X_train)}, 測試集: {len(X_test)}")
+    print(f"[{attack_type}] 訓練集標籤分布 - 0: {np.sum(y_train == 0)}, 1: {np.sum(y_train == 1)}")
+    print(f"[{attack_type}] 測試集標籤分布 - 0: {np.sum(y_test == 0)}, 1: {np.sum(y_test == 1)}")
 
     # 隨機打亂訓練順序
     train_indices = np.random.permutation(len(X_train))
 
     for idx in tqdm(train_indices, desc=f"Training SHAP {attack_type}", leave=False):
-        i = train_indices[idx] if idx < len(train_indices) else idx
-        current_class_samples = X_train[y_train == y_train[i]][:20]
-        detector.update(X_train[i], y_train[i],
-                        current_class_samples, X_train[:min(i + 1, 100)])
-
-        # 測試
-    y_pred_proba = []
-    y_pred_binary = []
-
-    for i in range(len(X_test)):
-        prob = detector.predict_proba(X_test[i])
-        y_pred_proba.append(prob)
-        # 調整閾值避免完美分類
-        threshold = 0.5 + np.random.normal(0, 0.05)
-        threshold = np.clip(threshold, 0.4, 0.6)
-        y_pred_binary.append(1 if prob > threshold else 0)
-
-    # 計算指標
-    accuracy = accuracy_score(y_test, y_pred_binary)
-    precision, recall, f1, _ = precision_recall_fscore_support(y_test, y_pred_binary, average='binary')
-
-    try:
-        auc = roc_auc_score(y_test, y_pred_proba)
-    except:
-        auc = 0.5
-
-    results = {
-        'detector': detector,
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
-        'auc': auc,
-        'y_test': y_test,
-        'y_pred_proba': y_pred_proba,
-        'y_pred_binary': y_pred_binary,
-        'num_rules': len(detector.rules)
-    }
-
-    return results
-
-    # 🔧 新增：替代的SHAP簽名訓練函數（使用不同基線策略）
-
-
-def train_shap_fuzzy_detector_v2(clean_data, adv_data, model, attack_type, test_ratio=0.3):
-    """
-    替代版本：使用不同類別的乾淨樣本作為基線比較
-    """
-    # 生成SHAP簽名
-    clean_signatures, adv_signatures = generate_shap_signatures(
-        model, clean_data['images'], adv_data['images']
-    )
-
-    # 🔧 修正：使用交叉比較策略
-    n_samples = len(clean_signatures)
-
-    # 創建乾淨樣本的交叉比較（每個樣本與隨機選擇的其他乾淨樣本比較）
-    clean_indices = np.random.permutation(n_samples)
-    clean_ref_indices = np.roll(clean_indices, n_samples // 3)  # 循環移位創建不同配對
-
-    clean_features_diff = extract_feature_differences(
-        clean_signatures[clean_indices],
-        clean_signatures[clean_ref_indices]
-    )
-
-    # 對抗樣本：與對應的乾淨樣本比較
-    adv_features_diff = extract_feature_differences(clean_signatures, adv_signatures)
-
-    print(f"Clean cross-comparison diff shape: {clean_features_diff.shape}")
-    print(f"Adversarial diff shape: {adv_features_diff.shape}")
-    print(f"Clean diff stats: mean={clean_features_diff.mean():.4f}, std={clean_features_diff.std():.4f}")
-    print(f"Adv diff stats: mean={adv_features_diff.mean():.4f}, std={adv_features_diff.std():.4f}")
-
-    # 初始化偵測器
-    detector = FuzzyDetector(attack_type=f"{attack_type}_v2")
-
-    # 模糊化特徵
-    clean_features = detector.fuzzify(clean_features_diff)
-    adv_features = detector.fuzzify(adv_features_diff)
-
-    # 建立訓練資料
-    X = np.vstack([clean_features, adv_features])
-    y = np.hstack([np.zeros(len(clean_features)), np.ones(len(adv_features))])
-
-    # 分割訓練/測試
-    n_train = int(len(X) * (1 - test_ratio))
-    indices = np.random.permutation(len(X))
-    train_idx, test_idx = indices[:n_train], indices[n_train:]
-
-    X_train, X_test = X[train_idx], X[test_idx]
-    y_train, y_test = y[train_idx], y[test_idx]
-
-    # 訓練過程
-    train_indices = np.random.permutation(len(X_train))
-
-    for idx in tqdm(train_indices, desc=f"Training SHAP {attack_type} v2", leave=False):
         i = train_indices[idx] if idx < len(train_indices) else idx
         current_class_samples = X_train[y_train == y_train[i]][:20]
         detector.update(X_train[i], y_train[i],
@@ -774,18 +662,22 @@ def train_shap_fuzzy_detector_v2(clean_data, adv_data, model, attack_type, test_
     for i in range(len(X_test)):
         prob = detector.predict_proba(X_test[i])
         y_pred_proba.append(prob)
-        threshold = 0.5 + np.random.normal(0, 0.05)
-        threshold = np.clip(threshold, 0.4, 0.6)
-        y_pred_binary.append(1 if prob > threshold else 0)
+        y_pred_binary.append(1 if prob > 0.5 else 0)
 
     # 計算指標
     accuracy = accuracy_score(y_test, y_pred_binary)
-    precision, recall, f1, _ = precision_recall_fscore_support(y_test, y_pred_binary, average='binary')
 
     try:
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            y_test, y_pred_binary, average='binary', zero_division=0
+        )
         auc = roc_auc_score(y_test, y_pred_proba)
-    except:
+    except Exception as e:
+        print(f"[{attack_type}] Metric calculation error: {e}")
+        precision, recall, f1 = 0.0, 0.0, 0.0
         auc = 0.5
+
+    print(f"[{attack_type}] Results - Acc: {accuracy:.3f}, F1: {f1:.3f}, AUC: {auc:.3f}, Rules: {len(detector.rules)}")
 
     results = {
         'detector': detector,
@@ -797,7 +689,10 @@ def train_shap_fuzzy_detector_v2(clean_data, adv_data, model, attack_type, test_
         'y_test': y_test,
         'y_pred_proba': y_pred_proba,
         'y_pred_binary': y_pred_binary,
-        'num_rules': len(detector.rules)
+        'num_rules': len(detector.rules),
+        'successful_attacks': successful_attack_mask.sum(),
+        'total_attacks': len(successful_attack_mask),
+        'attack_success_rate': successful_attack_mask.mean()
     }
 
     return results
@@ -812,7 +707,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
-    print("=== 🔧 修正版 SHAP Signature Fuzzy Adversarial Attack Detection ===")
+    print("=== SHAP Signature Fuzzy Adversarial Attack Detection ===")
 
     train_loader, test_loader = load_mnist(batch_size=256, shuffle_test=True)
 
@@ -841,7 +736,7 @@ def main():
     adv_samples, attack_params = generate_adversarial_samples(
         art_clf, test_loader,
         attack_types=['fgsm', 'pgd'],
-        max_samples=1000  # 減少樣本數量以加速SHAP計算
+        max_samples=800  # 減少樣本數量以加速SHAP計算
     )
 
     # 取得預測結果
@@ -867,29 +762,27 @@ def main():
             clean_data = results['clean']
             adv_data = results[attack_type]
 
-            # 🔧 使用修正版本的訓練函數
-            print(f"\n--- Training {attack_type.upper()} detector (噪音基線版本) ---")
-            detector_results_v1 = train_shap_fuzzy_detector(clean_data, adv_data, model, attack_type)
-            detection_results[f"{attack_type}_v1"] = detector_results_v1
-
-            print(f"\n--- Training {attack_type.upper()} detector (交叉比較版本) ---")
-            detector_results_v2 = train_shap_fuzzy_detector_v2(clean_data, adv_data, model, attack_type)
-            detection_results[f"{attack_type}_v2"] = detector_results_v2
+            detector_results = train_shap_fuzzy_detector(model, clean_data, adv_data, attack_type)
+            detection_results[attack_type] = detector_results
 
     # 最終統整表格
     print("\n" + "=" * 100)
-    print("🔧 修正版 FINAL RESULTS SUMMARY")
+    print("FINAL RESULTS SUMMARY - SHAP SIGNATURE APPROACH")
     print("=" * 100)
     print(f"Random seed: {seed} | Base model accuracy: {base_acc:.4f}")
     print()
+    print("訓練策略：直接使用對抗樣本，攻擊成功標記為1，攻擊失敗標記為0")
+    print("特徵方法：SHAP簽名差異分析")
+    print()
 
     # 表格標題
-    header = f"{'Attack':<15} {'Version':<10} {'Detection':<10} {'F1-Score':<10} {'AUC':<8} {'Rules':<6} {'Success Rate':<13} {'Params':<25}"
+    header = f"{'Attack':<12} {'Detection':<10} {'F1-Score':<10} {'AUC':<8} {'Rules':<6} {'Success Rate':<13} {'Successful/Total':<15} {'Params':<25}"
     print(header)
     print("-" * len(header))
 
     for attack_type in ['fgsm', 'pgd']:
-        if f"{attack_type}_v1" in detection_results:
+        if attack_type in detection_results:
+            det_results = detection_results[attack_type]
             att_results = attack_effectiveness[attack_type]
 
             # 攻擊參數字串
@@ -897,37 +790,31 @@ def main():
                 params_str = f"eps={attack_params[attack_type]['eps']:.3f}"
             elif attack_type == 'pgd':
                 params_str = f"eps={attack_params[attack_type]['eps']:.3f},iter={attack_params[attack_type]['max_iter']}"
+            elif attack_type == 'deepfool':
+                params_str = f"iter={attack_params[attack_type]['max_iter']},ε={attack_params[attack_type]['epsilon']:.3f}"
             else:
                 params_str = ""
 
-            # v1 版本 (噪音基線)
-            det_results_v1 = detection_results[f"{attack_type}_v1"]
-            print(f"{attack_type.upper():<15} "
-                  f"{'Noise':<10} "
-                  f"{det_results_v1['accuracy']:<10.4f} "
-                  f"{det_results_v1['f1']:<10.4f} "
-                  f"{det_results_v1['auc']:<8.4f} "
-                  f"{det_results_v1['num_rules']:<6} "
+            # 成功攻擊統計
+            successful_total = f"{det_results['successful_attacks']}/{det_results['total_attacks']}"
+
+            print(f"{attack_type.upper():<12} "
+                  f"{det_results['accuracy']:<10.4f} "
+                  f"{det_results['f1']:<10.4f} "
+                  f"{det_results['auc']:<8.4f} "
+                  f"{det_results['num_rules']:<6} "
                   f"{att_results['attack_success_rate']:<13.4f} "
+                  f"{successful_total:<15} "
                   f"{params_str:<25}")
 
-            # v2 版本 (交叉比較)
-            det_results_v2 = detection_results[f"{attack_type}_v2"]
-            print(f"{'':<15} "
-                  f"{'Cross':<10} "
-                  f"{det_results_v2['accuracy']:<10.4f} "
-                  f"{det_results_v2['f1']:<10.4f} "
-                  f"{det_results_v2['auc']:<8.4f} "
-                  f"{det_results_v2['num_rules']:<6} "
-                  f"{'':<13} "
-                  f"{'':<25}")
-
     print("=" * 100)
-    print("🔧 修正說明:")
-    print("- Noise: 乾淨樣本 + 小量噪音作為基線比較")
-    print("- Cross: 乾淨樣本間交叉比較作為基線")
-    print("- 預期準確率應在 75-90% 範圍內（非100%）")
-    print("=" * 100)
+    print("註解說明：")
+    print("- Detection: 偵測器準確率（區分攻擊成功vs攻擊失敗的能力）")
+    print("- Success Rate: 攻擊成功率（對抗樣本成功欺騙模型的比例）")
+    print("- Successful/Total: 成功攻擊樣本數/總對抗樣本數")
+    print("- 標籤策略: 攻擊成功=1, 攻擊失敗=0")
+    print("- 特徵方法: 使用SHAP簽名差異作為偵測特徵")
+    print("- 不再使用人工加噪聲，直接基於真實對抗樣本的SHAP簽名差異")
 
 
 if __name__ == '__main__':
