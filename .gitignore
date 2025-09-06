@@ -1,3 +1,18 @@
-# Ignore all data folders and their contents
+# Data folders
 **/data/
-**/data/** 
+
+# Python cache
+__pycache__/
+*.pyc
+
+# PyCharm
+.idea/
+
+# Models and logs
+*.pth
+*.pkl
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

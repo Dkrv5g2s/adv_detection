@@ -24,8 +24,8 @@ ATTACK_TYPES = ['fgsm', 'pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = "./simple_mnist_cnn.pth"
-TRAINING_EPOCHS = 5
+MODEL_PATH = "./cifar10_cnn.pth"
+TRAINING_EPOCHS = 32
 BATCH_SIZE = 256
 
 def generate_seed():

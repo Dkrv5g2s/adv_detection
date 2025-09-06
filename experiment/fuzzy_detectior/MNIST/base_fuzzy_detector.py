@@ -131,7 +131,7 @@ def main():
     print("\n=== Phase 1: Generating training adversarial samples ===")
     train_adv_samples, attack_params = generate_adversarial_samples(
         art_clf, train_loader,
-        attack_types=ATTACK_TYPES,  # 使用全域設定
+        attack_types=ATTACK_TYPES,
         max_samples=TRAIN_SAMPLES
     )
 
@@ -206,6 +206,7 @@ def main():
 
     # 最終統整表格
     print_results(seed, base_acc, detection_results, attack_effectiveness, attack_params)
+
 
 
 def print_results(seed, base_acc, detection_results, attack_effectiveness, attack_params):
