@@ -49,6 +49,7 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
 
     if 'fgsm' in attack_types:
         eps = np.random.uniform(0.25, 0.45)
+        # eps = 0.1
         attack_params['fgsm'] = {'eps': eps}
         attacks['fgsm'] = FastGradientMethod(estimator=art_clf, eps=eps)
 

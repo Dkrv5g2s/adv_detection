@@ -7,7 +7,7 @@ def load_mnist(batch_size=256, shuffle_test=True):
     """載入MNIST資料集"""
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))  # MNIST標準化
+        # transforms.Normalize((0.1307,), (0.3081,))  # MNIST標準化
     ])
 
     train_set = datasets.MNIST(root="./data", train=True, download=True, transform=transform)
