@@ -56,7 +56,7 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
     if 'pgd' in attack_types:
         eps = np.random.uniform(0.2, 0.4)
         max_iter = np.random.randint(80, 150)
-        eps_step = eps / max_iter
+        eps_step = np.random.uniform(0.03, 0.05)
         attack_params['pgd'] = {'eps': eps, 'max_iter': max_iter}
         attacks['pgd'] = ProjectedGradientDescent(
             estimator=art_clf,

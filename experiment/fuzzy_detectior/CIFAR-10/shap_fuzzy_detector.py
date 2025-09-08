@@ -50,8 +50,8 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     adv_images = adv_data['images'][:min_samples]
 
     # 為clean圖片添加微小噪音
-    noise_std = np.random.uniform(0.01, 0.05)
-    clean_images_noisy = clean_images + np.random.normal(0, noise_std, clean_images.shape)
+    # noise_std = np.random.uniform(0.01, 0.05)
+    clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
     clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
 
     # 生成SHAP簽名

@@ -21,7 +21,7 @@ from feature_extraction import extract_features, extract_feature_differences
 
 warnings.filterwarnings('ignore')
 
-ATTACK_TYPES = ['fgsm']
+ATTACK_TYPES = ['pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
@@ -55,9 +55,9 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     adv_images = adv_data['images'][:min_samples]
 
     # 為clean圖片添加微小噪音
-    noise_std = np.random.uniform(0.01, 0.05)
-    clean_images_noisy = clean_images + np.random.normal(0, noise_std, clean_images.shape)
-    clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
+    # noise_std = np.random.uniform(0.01, 0.05)
+    clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
+    # clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
 
     # 生成SHAP簽名
     print(f"[{attack_type}] Generating clean SHAP signatures...")
@@ -93,10 +93,8 @@ def find_optimal_threshold(clean_diffs, adv_diffs, attack_type):
 
     # 嘗試不同的權重組合
     weight_methods = {
-        'equal': np.array([0.2, 0.2, 0.2, 0.2, 0.2]),
-        'entropy_heavy': np.array([0.1, 0.1, 0.4, 0.3, 0.1]),
-        'kl_heavy': np.array([0.1, 0.1, 0.2, 0.5, 0.1]),
-        'balanced': np.array([0.15, 0.15, 0.25, 0.25, 0.2])
+        '1': np.array([0.2, 0.3, 0.3, 0.2]),
+        '2': np.array([0.25, 0.25, 0.25,0.25])
     }
 
     best_f1 = 0

@@ -30,7 +30,7 @@ def extract_logits(model, images, device, batch_size=16):
     return np.concatenate(all_logits, axis=0)
 
 
-def compute_shap_values_batch(logit_classifier, explainer, logit_data, device, batch_size=10):
+def compute_shap_values_batch(logit_classifier, explainer, logit_data, device, batch_size=32):
     """分批計算SHAP值"""
     shap_values = []
 

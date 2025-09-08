@@ -62,7 +62,7 @@ def extract_feature_differences(p_clean, p_adv):
     l1_diff = np.mean(np.abs(p_adv - p_clean), axis=1)
 
     # 組合所有差異指標
-    all_diffs = [mse_diff, max_diff, entropy_diff, kl_diff, l1_diff]
+    all_diffs = [mse_diff, max_diff, kl_diff, l1_diff]
 
     # 正規化每個特徵到 [0,1]
     normalized_diffs = []

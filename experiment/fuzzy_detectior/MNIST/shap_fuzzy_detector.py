@@ -20,7 +20,7 @@ from shap_signature import generate_shap_signatures
 
 warnings.filterwarnings('ignore')
 
-ATTACK_TYPES = ['fgsm', 'pgd']
+ATTACK_TYPES = ['fgsm','pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
@@ -48,11 +48,12 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     min_samples = min(len(clean_data['images']), len(adv_data['images']))
     clean_images = clean_data['images'][:min_samples]
     adv_images = adv_data['images'][:min_samples]
+    #adv_images = np.clip(adv_images, 0, 1)
 
     # 為clean圖片添加微小噪音
     noise_std = np.random.uniform(0.01, 0.05)
-    clean_images_noisy = clean_images + np.random.normal(0, noise_std, clean_images.shape)
-    clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
+    clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
+    #clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
 
     # 生成SHAP簽名
     print(f"[{attack_type}] Generating clean SHAP signatures...")

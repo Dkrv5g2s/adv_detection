@@ -20,7 +20,7 @@ from fuzzy_detector import train_fuzzy_detector, test_fuzzy_detector, Triangular
 warnings.filterwarnings('ignore')
 
 
-ATTACK_TYPES = ['fgsm', 'pgd']
+ATTACK_TYPES = ['fgsm']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
@@ -56,8 +56,8 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
 
     # 為clean圖片添加微小noise
     noise_std = np.random.uniform(0.01, 0.05)  # 隨機噪聲強度
-    clean_images_noisy = clean_images + np.random.normal(0, noise_std, clean_images.shape)
-    clean_images_noisy = np.clip(clean_images_noisy, 0, 1)  # 確保像素值在合理範圍
+    clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
+    #clean_images_noisy = np.clip(clean_images_noisy, 0, 1)  # 確保像素值在合理範圍
 
     # 分別提取CNN特徵
     print(f"[{attack_type}] Extracting features...")
