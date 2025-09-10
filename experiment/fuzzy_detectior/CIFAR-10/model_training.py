@@ -6,26 +6,37 @@ from tqdm import tqdm
 def train_classifier(model, train_loader, test_loader, device, epochs=5, lr=1e-3):
     """訓練分類器"""
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
+                                 amsgrad=False)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True,
+                                                           min_lr=0)
 
     for ep in range(epochs):
         model.train()
-        total_loss = 0
+        running_loss = 0.0
+        correct = 0
+
         for x, y in tqdm(train_loader, desc=f"Epoch {ep + 1}/{epochs}"):
             x, y = x.to(device), y.to(device)
+
             optimizer.zero_grad()
             logits = model(x)
             loss = criterion(logits, y)
             loss.backward()
             optimizer.step()
-            total_loss += loss.item() * x.size(0)
 
-        scheduler.step()
-        avg_loss = total_loss / len(train_loader.dataset)
+            # compute training statistics
+            _, predicted = torch.max(logits, 1)
+            correct += (predicted == y).sum().item()
+            running_loss += loss.item()
+
+        avg_loss = running_loss / len(train_loader.dataset)
+        avg_acc = correct / len(train_loader.dataset)
+
+        scheduler.step(avg_loss)
         acc = eval_classifier(model, test_loader, device)
-        print(f"[Epoch {ep + 1}] loss={avg_loss:.4f} test_acc={acc:.4f}")
+        print(f"[Epoch {ep + 1}] loss={avg_loss:.5f} accuracy={avg_acc:.4f} test_acc={acc:.4f}")
 
     return model
 

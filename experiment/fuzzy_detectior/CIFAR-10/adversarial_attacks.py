@@ -48,14 +48,14 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
     attack_params = {}
 
     if 'fgsm' in attack_types:
-        eps = np.random.uniform(0.25, 0.45)
+        eps = np.random.uniform(0.03, 0.1)
         attack_params['fgsm'] = {'eps': eps}
         attacks['fgsm'] = FastGradientMethod(estimator=art_clf, eps=eps)
 
     if 'pgd' in attack_types:
-        eps = np.random.uniform(0.2, 0.4)
-        max_iter = np.random.randint(80, 150)
-        eps_step = np.random.uniform(0.03, 0.05)
+        eps = np.random.uniform(0.03, 0.1)
+        max_iter = np.random.randint(10, 40)
+        eps_step = np.random.uniform(0.01, 0.02)
         attack_params['pgd'] = {'eps': eps, 'max_iter': max_iter}
         attacks['pgd'] = ProjectedGradientDescent(
             estimator=art_clf,
@@ -106,6 +106,8 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
         #     plot_attack_distribution(results, attack_types, attack_params)
         # except Exception as e:
         #     print(f"Visualization error: {e}")
+        # 最後統一繪製攻擊對比圖像
+        # save_attack_comparison_images(results, attack_types)
 
     return results, attack_params
 
@@ -308,4 +310,55 @@ def plot_attack_distribution(results, attack_types, attack_params):
     plt.show()
 
     print(f"  Plot saved to: {save_path}")
+
+
+def save_attack_comparison_images(results, attack_types, save_dir='attack_comparison'):
+    import matplotlib.pyplot as plt
+    import os
+
+    print(f"Saving attack comparison images to {save_dir}/")
+    os.makedirs(save_dir, exist_ok=True)
+
+    classes = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+               'dog', 'frog', 'horse', 'ship', 'truck']
+
+    for attack_type in attack_types:
+        if attack_type not in results or len(results[attack_type]['x']) == 0:
+            continue
+
+        # 取前5張圖片
+        n_samples = min(5, len(results['clean']['x']))
+        original_imgs = results['clean']['x'][:n_samples]
+        attack_imgs = results[attack_type]['x'][:n_samples]
+        labels = results['clean']['y'][:n_samples]
+
+        fig, axes = plt.subplots(2, n_samples, figsize=(4 * n_samples, 8))
+
+        # 處理只有一張圖片的情況
+        if n_samples == 1:
+            axes = axes.reshape(2, 1)
+
+        for i in range(n_samples):
+            # 正規化到 [0, 1]
+            orig_img = np.clip((original_imgs[i] + 1) / 2, 0, 1)
+            attack_img = np.clip((attack_imgs[i] + 1) / 2, 0, 1)
+
+            # 🔥 關鍵：轉換維度 (C,H,W) → (H,W,C)
+            orig_img = np.transpose(orig_img, (1, 2, 0))
+            attack_img = np.transpose(attack_img, (1, 2, 0))
+
+            # 顯示圖片
+            axes[0, i].imshow(orig_img)
+            axes[0, i].set_title(f'Original: {classes[labels[i]]}', fontsize=12)
+            axes[0, i].axis('off')
+
+            axes[1, i].imshow(attack_img)
+            axes[1, i].set_title(f'{attack_type.upper()}: {classes[labels[i]]}', fontsize=12)
+            axes[1, i].axis('off')
+
+        plt.tight_layout()
+        save_path = f'{save_dir}/{attack_type}_comparison.png'
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Saved {attack_type} comparison to {save_path}")
 
