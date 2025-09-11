@@ -21,7 +21,7 @@ from feature_extraction import extract_features, extract_feature_differences
 
 warnings.filterwarnings('ignore')
 
-ATTACK_TYPES = ['pgd']
+ATTACK_TYPES = ['fgsm','pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
@@ -57,7 +57,7 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     # 為clean圖片添加微小噪音
     # noise_std = np.random.uniform(0.01, 0.05)
     clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
-    # clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
+
 
     # 生成SHAP簽名
     print(f"[{attack_type}] Generating clean SHAP signatures...")
@@ -249,7 +249,9 @@ def main():
     train_adv_samples, attack_params = generate_adversarial_samples(
         art_clf, train_loader,
         attack_types=ATTACK_TYPES,
-        max_samples=TRAIN_SAMPLES
+        max_samples=TRAIN_SAMPLES,
+        model=model,
+        device=device
     )
 
     # 取得訓練用預測結果
@@ -297,9 +299,10 @@ def main():
     test_adv_samples, test_attack_params= generate_adversarial_samples(
         art_clf, test_loader,
         attack_types=list(thresholds.keys()),
-        max_samples=TEST_SAMPLES
+        max_samples=TEST_SAMPLES,
+        model=model,
+        device=device
     )
-
     test_results = {}
     for attack_type, data in test_adv_samples.items():
         predictions = get_predictions(model, data['x'], device)
@@ -357,7 +360,7 @@ def print_results(seed, base_acc, detection_results, attack_effectiveness, attac
                 if attack_type == 'fgsm':
                     params_str = f"eps={attack_params[attack_type]['eps']:.3f}"
                 elif attack_type == 'pgd':
-                    params_str = f"eps={attack_params[attack_type]['eps']:.3f},iter={attack_params[attack_type]['max_iter']}"
+                    params_str = f"eps={attack_params[attack_type]['eps']:.3f},step={attack_params[attack_type]['eps_step']:.3f},iter={attack_params[attack_type]['max_iter']}"
                 elif attack_type == 'cw':
                     params_str = f"c={attack_params[attack_type]['confidence']:.1f}"
                 elif attack_type == 'deepfool':

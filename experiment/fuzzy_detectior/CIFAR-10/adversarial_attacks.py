@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,27 +17,34 @@ def build_art_classifier(model, device):
     art_model = PyTorchClassifier(
         model=model,
         loss=loss_fn,
-        input_shape=(1, 28, 28),
+        input_shape=(3, 32, 32),
         nb_classes=10,
         optimizer=torch.optim.Adam(model.parameters(), lr=1e-3),
         device_type='gpu' if device.type == 'cuda' else 'cpu'
     )
     return art_model
 
-def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], max_samples=1500):
-    """生成對抗樣本"""
+
+def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], max_samples=1500, model=None,
+                                 device=None):
+    """生成對抗樣本並確保所有數據都在[-1,1]範圍內"""
+    print("Generating adversarial samples...")
+
     # 先收集所有資料並隨機打亂
     all_data = []
     for batch_x, batch_y in data_loader:
+        batch_x = batch_x.cpu().numpy()
+        batch_y = batch_y.cpu().numpy()
+
         for i in range(len(batch_x)):
-            all_data.append((batch_x[i:i + 1].numpy(), batch_y[i:i + 1].numpy()))
+            all_data.append((batch_x[i:i + 1], batch_y[i:i + 1]))
 
     # 隨機打亂並選取樣本
     np.random.shuffle(all_data)
     selected_data = all_data[:max_samples]
 
     # 重新組織成批次
-    batch_size = 256
+    batch_size = 128
     all_batches = []
     for i in range(0, len(selected_data), batch_size):
         batch_data = selected_data[i:i + batch_size]
@@ -48,31 +57,34 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
     attack_params = {}
 
     if 'fgsm' in attack_types:
-        eps = np.random.uniform(0.03, 0.1)
+        eps = 0.08#np.random.uniform(0.03, 0.1)
         attack_params['fgsm'] = {'eps': eps}
         attacks['fgsm'] = FastGradientMethod(estimator=art_clf, eps=eps)
+        print(f"FGSM epsilon: {eps}")
 
     if 'pgd' in attack_types:
-        eps = np.random.uniform(0.03, 0.1)
+        eps = 0.08#np.random.uniform(0.03, 0.1)
         max_iter = np.random.randint(10, 40)
-        eps_step = np.random.uniform(0.01, 0.02)
-        attack_params['pgd'] = {'eps': eps, 'max_iter': max_iter}
+        eps_step =0.03# np.random.uniform(0.01, 0.02)
+        attack_params['pgd'] = {'eps': eps,'eps_step':eps_step, 'max_iter': max_iter}
         attacks['pgd'] = ProjectedGradientDescent(
             estimator=art_clf,
             eps=eps,
             eps_step=eps_step,
             max_iter=max_iter
         )
+        print(f"PGD epsilon: {eps}, iterations: {max_iter}")
 
     if 'deepfool' in attack_types:
-        max_iter = np.random.randint(8, 15)
-        epsilon = np.random.uniform(0.02, 0.08)
+        max_iter = 10
+        epsilon = 0.1
         attack_params['deepfool'] = {'max_iter': max_iter, 'epsilon': epsilon}
         attacks['deepfool'] = DeepFool(
             classifier=art_clf,
             max_iter=max_iter,
             epsilon=epsilon
         )
+        print(f"DeepFool max_iter: {max_iter}, epsilon: {epsilon}")
 
     results = {}
 
@@ -84,32 +96,79 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
 
     # 對每種攻擊類型產生對抗樣本
     for attack_name, attack in attacks.items():
+        print(f"\n Generating {attack_name.upper()} attacks...")
         results[attack_name] = {'x': [], 'y': []}
 
         for i, (x_np, y_np) in enumerate(tqdm(all_batches, desc=f"{attack_name.upper()}", leave=False)):
             try:
+                # 檢查原始預測
+                original_preds = art_clf.predict(x_np)
+                original_classes = np.argmax(original_preds, axis=1)
+
+                # 生成對抗樣本
                 x_adv = attack.generate(x=x_np)
+
+                x_adv = np.clip(x_adv, -1, 1)
+
+
+                # 檢查攻擊後的預測
+                adv_preds = art_clf.predict(x_adv)
+                adv_classes = np.argmax(adv_preds, axis=1)
+
+                # 計算攻擊成功率
+                success_rate = np.mean(original_classes != adv_classes)
+                if i == 0:  # 只在第一個批次顯示
+                    print(f"  Batch {i}: Attack success rate: {success_rate:.2%}")
+                    print(f"  Original classes: {original_classes[:5]}")
+                    print(f"  Adversarial classes: {adv_classes[:5]}")
+                    print(f"  Adversarial data range after clipping: [{x_adv.min():.3f}, {x_adv.max():.3f}]")
+
                 results[attack_name]['x'].append(x_adv)
                 results[attack_name]['y'].append(y_np)
+
             except Exception as e:
+                print(f"  Error in batch {i}: {e}")
                 results[attack_name]['x'].append(x_np)
                 results[attack_name]['y'].append(y_np)
 
-    # 合併所有批次
+    # 合併所有批次並確保數據一致性
     for key in results:
         if results[key]['x']:
-            results[key]['x'] = np.concatenate(results[key]['x'], axis=0)
-            results[key]['y'] = np.concatenate(results[key]['y'], axis=0)
+            shapes = [arr.shape for arr in results[key]['x']]
+            print(f"{key} batch shapes: {shapes[:3]}...")
 
-        # # 最後統一繪製所有攻擊的分布圖
-        # try:
-        #     plot_attack_distribution(results, attack_types, attack_params)
-        # except Exception as e:
-        #     print(f"Visualization error: {e}")
-        # 最後統一繪製攻擊對比圖像
-        # save_attack_comparison_images(results, attack_types)
+            try:
+                results[key]['x'] = np.concatenate(results[key]['x'], axis=0)
+                results[key]['y'] = np.concatenate(results[key]['y'], axis=0)
+
+                print(f"{key} final shape: {results[key]['x'].shape}")
+                print(f"{key} final range: [{results[key]['x'].min():.3f}, {results[key]['x'].max():.3f}]")
+
+            except Exception as e:
+                print(f"Error concatenating {key}: {e}")
+                fixed_x = []
+                for arr in results[key]['x']:
+                    if len(arr.shape) == 4:
+                        fixed_x.append(arr)
+                    else:
+                        print(f"Skipping malformed array with shape: {arr.shape}")
+
+                if fixed_x:
+                    results[key]['x'] = np.concatenate(fixed_x, axis=0)
+                    results[key]['y'] = np.concatenate(results[key]['y'], axis=0)
+
+
+
+    # 繪製攻擊對比圖像
+    try:
+        save_attack_comparison_images(results, attack_types, save_dir='attack_comparison',
+                                      model=model, device=device)
+    except Exception as e:
+        print(f"Image comparison error: {e}")
+        print("Continuing without image comparison...")
 
     return results, attack_params
+
 
 def get_predictions(model, X, device, batch_size=256):
     """取得 softmax 機率向量"""
@@ -312,53 +371,143 @@ def plot_attack_distribution(results, attack_types, attack_params):
     print(f"  Plot saved to: {save_path}")
 
 
-def save_attack_comparison_images(results, attack_types, save_dir='attack_comparison'):
-    import matplotlib.pyplot as plt
-    import os
+def save_attack_comparison_images(results, attack_types, save_dir='attack_comparison', model=None, device=None):
 
-    print(f"Saving attack comparison images to {save_dir}/")
+
+    def prepare_cifar10_for_display(img):
+        """準備CIFAR-10圖像用於matplotlib顯示"""
+        # 轉換範圍：[-1, 1] → [0, 1]
+        img_show = (img + 1) / 2
+
+        # CIFAR-10維度轉換：(3, 32, 32) → (32, 32, 3)
+        if len(img_show.shape) == 3 and img_show.shape[0] == 3:
+            img_show = img_show.transpose(1, 2, 0)
+
+        return img_show
+
+    print("Saving attack comparison images...")
     os.makedirs(save_dir, exist_ok=True)
 
+    # CIFAR-10類別名稱
     classes = ['airplane', 'automobile', 'bird', 'cat', 'deer',
                'dog', 'frog', 'horse', 'ship', 'truck']
 
     for attack_type in attack_types:
-        if attack_type not in results or len(results[attack_type]['x']) == 0:
+        if attack_type not in results:
+            print(f"Skipping {attack_type} - not found in results")
             continue
 
-        # 取前5張圖片
-        n_samples = min(5, len(results['clean']['x']))
-        original_imgs = results['clean']['x'][:n_samples]
-        attack_imgs = results[attack_type]['x'][:n_samples]
-        labels = results['clean']['y'][:n_samples]
+        try:
+            print(f"Processing {attack_type}...")
 
-        fig, axes = plt.subplots(2, n_samples, figsize=(4 * n_samples, 8))
+            # 獲取數據
+            orig_data = results['clean']['x']
+            attack_data = results[attack_type]['x']
+            labels = results['clean']['y']
 
-        # 處理只有一張圖片的情況
-        if n_samples == 1:
-            axes = axes.reshape(2, 1)
+            # 計算預測結果
+            if model is not None and device is not None:
+                print("Getting model predictions...")
+                model.eval()
 
-        for i in range(n_samples):
-            # 正規化到 [0, 1]
-            orig_img = np.clip((original_imgs[i] + 1) / 2, 0, 1)
-            attack_img = np.clip((attack_imgs[i] + 1) / 2, 0, 1)
+                with torch.no_grad():
+                    n_samples = min(20, len(orig_data))
 
-            # 🔥 關鍵：轉換維度 (C,H,W) → (H,W,C)
-            orig_img = np.transpose(orig_img, (1, 2, 0))
-            attack_img = np.transpose(attack_img, (1, 2, 0))
+                    # 原始圖像預測
+                    orig_tensor = torch.from_numpy(orig_data[:n_samples]).float().to(device)
+                    orig_logits = model(orig_tensor)
+                    orig_preds = torch.argmax(orig_logits, dim=1).cpu().numpy()
 
-            # 顯示圖片
-            axes[0, i].imshow(orig_img)
-            axes[0, i].set_title(f'Original: {classes[labels[i]]}', fontsize=12)
-            axes[0, i].axis('off')
+                    # 攻擊後圖像預測
+                    attack_tensor = torch.from_numpy(attack_data[:n_samples]).float().to(device)
+                    attack_logits = model(attack_tensor)
+                    attack_preds = torch.argmax(attack_logits, dim=1).cpu().numpy()
+            else:
+                n_samples = min(20, len(orig_data))
+                # 如果沒有模型，使用真實標籤作為預測
+                if hasattr(labels, '__len__'):
+                    orig_preds = labels[:n_samples]
+                    attack_preds = labels[:n_samples]
+                else:
+                    orig_preds = [labels] * n_samples
+                    attack_preds = [labels] * n_samples
+                print("No model provided, using labels as predictions")
 
-            axes[1, i].imshow(attack_img)
-            axes[1, i].set_title(f'{attack_type.upper()}: {classes[labels[i]]}', fontsize=12)
-            axes[1, i].axis('off')
+            # 找出攻擊成功的樣本（預測結果改變）
+            successful_attacks = []
+            for i in range(n_samples):
+                if orig_preds[i] != attack_preds[i]:
+                    successful_attacks.append(i)
+                if len(successful_attacks) >= 5:  # 最多顯示5個成功案例
+                    break
 
-        plt.tight_layout()
-        save_path = f'{save_dir}/{attack_type}_comparison.png'
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"Saved {attack_type} comparison to {save_path}")
+            # 如果沒有成功攻擊，就顯示前5個樣本
+            if not successful_attacks:
+                print(f"No successful attacks found for {attack_type}, showing first 5 samples")
+                successful_attacks = list(range(min(5, n_samples)))
+
+            # 準備顯示
+            n_display = min(5, len(successful_attacks))
+            selected_indices = successful_attacks[:n_display]
+
+            # 創建子圖
+            fig, axes = plt.subplots(2, n_display, figsize=(4 * n_display, 8))
+            if n_display == 1:
+                axes = axes.reshape(2, 1)
+
+            for j, i in enumerate(selected_indices):
+                # 準備圖像顯示
+                orig_img_show = prepare_cifar10_for_display(orig_data[i])
+                attack_img_show = prepare_cifar10_for_display(attack_data[i])
+
+                # 獲取標籤和預測
+                if hasattr(labels, '__getitem__') and len(labels) > i:
+                    true_label = labels[i]
+                else:
+                    true_label = labels
+
+                orig_pred = orig_preds[i]
+                attack_pred = attack_preds[i]
+
+                # 顯示原始圖像
+                axes[0, j].imshow(orig_img_show, interpolation='nearest')
+                axes[0, j].set_title(
+                    f'Original\nTrue: {classes[true_label]}\nPred: {classes[orig_pred]}',
+                    fontsize=11
+                )
+                axes[0, j].axis('off')
+
+                # 顯示攻擊後圖像
+                attack_status = "Success" if orig_pred != attack_pred else "Failed"
+                axes[1, j].imshow(attack_img_show, interpolation='nearest')
+                axes[1, j].set_title(
+                    f'{attack_type.upper()} ({attack_status})\nPred: {classes[attack_pred]}',
+                    fontsize=11
+                )
+                axes[1, j].axis('off')
+
+                # 添加邊框顏色表示攻擊結果
+                color = 'red' if orig_pred != attack_pred else 'green'
+                for spine in axes[1, j].spines.values():
+                    spine.set_edgecolor(color)
+                    spine.set_linewidth(3)
+                    spine.set_visible(True)
+
+            plt.tight_layout()
+
+            # 保存圖像
+            save_path = f'{save_dir}/{attack_type}_comparison.png'
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            plt.close()
+
+            print(f"Saved {attack_type} comparison to {save_path}")
+
+        except Exception as e:
+            print(f"Error processing {attack_type}: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+
+
 
