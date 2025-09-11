@@ -20,7 +20,7 @@ from feature_extraction import extract_features, extract_feature_differences
 
 warnings.filterwarnings('ignore')
 
-ATTACK_TYPES = ['fgsm','pgd']
+ATTACK_TYPES = ['deepfool']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
@@ -364,7 +364,7 @@ def print_results(seed, base_acc, detection_results, attack_effectiveness, attac
                 elif attack_type == 'cw':
                     params_str = f"c={attack_params[attack_type]['confidence']:.1f}"
                 elif attack_type == 'deepfool':
-                    params_str = f"overshoot={attack_params[attack_type]['overshoot']:.2f}"
+                    params_str = f"eps={attack_params[attack_type]['eps']:.3f},max_iter={attack_params[attack_type]['max_iter']},nb_grads={attack_params[attack_type]['nb_grads']}"
 
             print(f"{attack_type.upper():<12} "
                   f"{det_results['accuracy']:<10.4f} "

@@ -74,15 +74,20 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
         )
 
     if 'deepfool' in attack_types:
-        max_iter = 10
-        epsilon = 0.1
-        attack_params['deepfool'] = {'max_iter': max_iter, 'epsilon': epsilon}
+        max_iter = 200
+        nb_grads = 10
+        eps = 1.2
+        attack_params['deepfool'] = {'max_iter': max_iter,'eps': eps,'nb_grads': nb_grads,
+        }
+
         attacks['deepfool'] = DeepFool(
             classifier=art_clf,
             max_iter=max_iter,
-            epsilon=epsilon
+            epsilon=eps,
+            nb_grads=nb_grads,
         )
-        print(f"DeepFool max_iter: {max_iter}, epsilon: {epsilon}")
+
+
 
     results = {}
 
@@ -115,11 +120,11 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
 
                 # 計算攻擊成功率
                 success_rate = np.mean(original_classes != adv_classes)
-                if i == 0:  # 只在第一個批次顯示
-                    print(f"  Batch {i}: Attack success rate: {success_rate:.2%}")
-                    print(f"  Original classes: {original_classes[:5]}")
-                    print(f"  Adversarial classes: {adv_classes[:5]}")
-                    print(f"  Adversarial data range after clipping: [{x_adv.min():.3f}, {x_adv.max():.3f}]")
+
+                print(f"  Batch {i}: Attack success rate: {success_rate:.2%}")
+                print(f"  Original classes: {original_classes[:5]}")
+                print(f"  Adversarial classes: {adv_classes[:5]}")
+                print(f"  Adversarial data range after clipping: [{x_adv.min():.3f}, {x_adv.max():.3f}]")
 
                 results[attack_name]['x'].append(x_adv)
                 results[attack_name]['y'].append(y_np)
