@@ -7,7 +7,6 @@ import PIL
 def load_cifar10(batch_size=256, shuffle_test=True):
     """載入CIFAR-10資料集，使用數據增強，保持[0,1]範圍"""
 
-    # 訓練集使用數據增強
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomAffine(

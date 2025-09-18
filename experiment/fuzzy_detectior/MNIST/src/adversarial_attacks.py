@@ -165,7 +165,7 @@ def generate_adversarial_samples(art_clf, data_loader, attack_types=['fgsm'], ma
 
     # 繪製攻擊對比圖像
     try:
-        save_attack_comparison_images(results, attack_types, save_dir='attack_comparison',
+        save_attack_comparison_images(results, attack_types, save_dir='../attack_comparison',
                                       model=model, device=device)
     except Exception as e:
         print(f"Image comparison error: {e}")

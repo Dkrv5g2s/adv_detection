@@ -5,17 +5,17 @@ import numpy as np
 import torch
 import warnings
 
-from models import CIFAR10CNN
-from data_utils import load_cifar10
-from model_training import train_classifier, eval_classifier
-from adversarial_attacks import (
+from fuzzy_detectior.CIFAR10.src.models import CIFAR10CNN
+from fuzzy_detectior.CIFAR10.src.data_utils import load_cifar10
+from fuzzy_detectior.CIFAR10.src.model_training import train_classifier, eval_classifier
+from fuzzy_detectior.CIFAR10.src.adversarial_attacks import (
     build_art_classifier,
     generate_adversarial_samples,
     get_predictions,
     evaluate_attack_effectiveness
 )
-from feature_extraction import extract_features, extract_feature_differences
-from fuzzy_detector import train_fuzzy_detector, test_fuzzy_detector, TriangularFuzzySets
+from fuzzy_detectior.CIFAR10.src.feature_extraction import extract_features, extract_feature_differences
+from fuzzy_detectior.CIFAR10.src.fuzzy_detector import train_fuzzy_detector, test_fuzzy_detector, TriangularFuzzySets
 
 warnings.filterwarnings('ignore')
 
@@ -24,7 +24,7 @@ ATTACK_TYPES = ['fgsm', 'pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = "./cifar10_cnn.pth"
+MODEL_PATH = ".src//cifar10_cnn.pth"
 TRAINING_EPOCHS = 32
 BATCH_SIZE = 256
 

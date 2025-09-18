@@ -6,13 +6,13 @@ import torch
 import warnings
 from torch.utils.data import TensorDataset, DataLoader
 
-from models import SimpleCNN
-from data_utils import load_mnist
-from model_training import train_classifier, eval_classifier
+from fuzzy_detectior.MNIST.src.models import SimpleCNN
+from fuzzy_detectior.MNIST.src.data_utils import load_mnist
+from fuzzy_detectior.MNIST.src.model_training import train_classifier, eval_classifier
 
 warnings.filterwarnings('ignore')
 
-MODEL_PATH = "simple_mnist_cnn.pth"
+MODEL_PATH = "src/simple_mnist_cnn.pth"
 TRAINING_EPOCHS = 5
 BATCH_SIZE = 64
 TEST_SAMPLES = 1000

@@ -5,26 +5,26 @@ import numpy as np
 import torch
 import warnings
 
-from models import SimpleCNN
-from data_utils import load_mnist
-from model_training import train_classifier, eval_classifier
-from adversarial_attacks import (
+from fuzzy_detectior.MNIST.src.models import SimpleCNN
+from fuzzy_detectior.MNIST.src.data_utils import load_mnist
+from fuzzy_detectior.MNIST.src.model_training import train_classifier, eval_classifier
+from fuzzy_detectior.MNIST.src.adversarial_attacks import (
     build_art_classifier,
     generate_adversarial_samples,
     get_predictions,
     evaluate_attack_effectiveness
 )
-from feature_extraction import extract_feature_differences
-from fuzzy_detector import train_fuzzy_detector, test_fuzzy_detector, TriangularFuzzySets
-from shap_signature import generate_shap_signatures
+from fuzzy_detectior.MNIST.src.feature_extraction import extract_feature_differences
+from fuzzy_detectior.MNIST.src.fuzzy_detector import train_fuzzy_detector, test_fuzzy_detector
+from fuzzy_detectior.MNIST.src.shap_signature import generate_shap_signatures
 
 warnings.filterwarnings('ignore')
 
-ATTACK_TYPES = ['deepfool']
+ATTACK_TYPES = ['fgsm','pgd','deepfool']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = "simple_mnist_cnn.pth"
+MODEL_PATH = "src/simple_mnist_cnn.pth"
 TRAINING_EPOCHS = 5
 BATCH_SIZE = 256
 

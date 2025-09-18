@@ -6,25 +6,26 @@ import torch
 import warnings
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix
 
-from models import CIFAR10CNN
-from data_utils import load_cifar10
-from model_training import train_classifier, eval_classifier
-from adversarial_attacks import (
+from fuzzy_detectior.CIFAR10.src.shap_signature import generate_shap_signatures
+from fuzzy_detectior.CIFAR10.src.models import CIFAR10CNN
+from fuzzy_detectior.CIFAR10.src.data_utils import load_cifar10
+from fuzzy_detectior.CIFAR10.src.model_training import train_classifier, eval_classifier
+from fuzzy_detectior.CIFAR10.src.adversarial_attacks import (
     build_art_classifier,
     generate_adversarial_samples,
     get_predictions,
     evaluate_attack_effectiveness
 )
-from feature_extraction import extract_features, extract_feature_differences
+from fuzzy_detectior.CIFAR10.src.feature_extraction import extract_feature_differences
 
 warnings.filterwarnings('ignore')
 
-ATTACK_TYPES = ['fgsm', 'pgd']
+ATTACK_TYPES = ['fgsm','pgd','deepfool']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = "./cifar10_cnn.pth"
-TRAINING_EPOCHS = 5
+MODEL_PATH = "./src/cifar10_cnn.pth"
+TRAINING_EPOCHS = 32
 BATCH_SIZE = 256
 
 
@@ -44,27 +45,43 @@ def get_device():
 
 
 def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
-    """準備偵測器資料"""
-    print(f"[{attack_type}] Preparing detector data...")
+    """使用SHAP簽名準備偵測器資料"""
+    print(f"[{attack_type}] Preparing SHAP detector data...")
 
     # 確保樣本數量一致
     min_samples = min(len(clean_data['images']), len(adv_data['images']))
     clean_images = clean_data['images'][:min_samples]
     adv_images = adv_data['images'][:min_samples]
 
-    # 為clean圖片添加微小noise
-    noise_std = np.random.uniform(0.01, 0.05)
+    # 為clean圖片添加微小噪音
+    # noise_std = np.random.uniform(0.01, 0.05)
     clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
-    clean_images_noisy = np.clip(clean_images_noisy, 0, 1)
 
-    # 提取特徵
-    clean_features = extract_features(model, clean_images, device)
-    clean_features_noisy = extract_features(model, clean_images_noisy, device)
-    adv_features = extract_features(model, adv_images, device)
 
-    # 計算5維特徵差異
-    clean_features_diff = extract_feature_differences(clean_features, clean_features_noisy)
-    adv_features_diff = extract_feature_differences(clean_features, adv_features)
+    # 生成SHAP簽名
+    print(f"[{attack_type}] Generating clean SHAP signatures...")
+    clean_signatures = generate_shap_signatures(model, clean_images, device)
+
+    print(f"[{attack_type}] Generating noisy clean SHAP signatures...")
+    clean_signatures_noisy = generate_shap_signatures(model, clean_images_noisy, device)
+
+    print(f"[{attack_type}] Generating adversarial SHAP signatures...")
+    adv_signatures = generate_shap_signatures(model, adv_images, device)
+
+    # 計算特徵差異
+    clean_features_diff = extract_feature_differences(clean_signatures, clean_signatures_noisy)
+    adv_features_diff = extract_feature_differences(clean_signatures, adv_signatures)
+
+    # 調試資訊
+    print(f"[{attack_type}] Clean SHAP diff stats - mean: {clean_features_diff.mean():.4f}, std: {clean_features_diff.std():.4f}")
+    print(f"[{attack_type}] Adv SHAP diff stats - mean: {adv_features_diff.mean():.4f}, std: {adv_features_diff.std():.4f}")
+
+    # 檢查差異是否合理
+    ratio = adv_features_diff.mean() / (clean_features_diff.mean() + 1e-8)
+    print(f"[{attack_type}] SHAP Adversarial/Clean ratio: {ratio:.2f}")
+
+    if ratio < 2.0:
+        print(f"[{attack_type}] Warning: SHAP adversarial differences may be too small!")
 
     return clean_features_diff, adv_features_diff
 
@@ -231,7 +248,9 @@ def main():
     train_adv_samples, attack_params = generate_adversarial_samples(
         art_clf, train_loader,
         attack_types=ATTACK_TYPES,
-        max_samples=TRAIN_SAMPLES
+        max_samples=TRAIN_SAMPLES,
+        model=model,
+        device=device
     )
 
     # 取得訓練用預測結果
@@ -279,7 +298,9 @@ def main():
     test_adv_samples, test_attack_params= generate_adversarial_samples(
         art_clf, test_loader,
         attack_types=list(thresholds.keys()),
-        max_samples=TEST_SAMPLES
+        max_samples=TEST_SAMPLES,
+        model=model,
+        device=device
     )
 
     test_results = {}
@@ -339,11 +360,11 @@ def print_results(seed, base_acc, detection_results, attack_effectiveness, attac
                 if attack_type == 'fgsm':
                     params_str = f"eps={attack_params[attack_type]['eps']:.3f}"
                 elif attack_type == 'pgd':
-                    params_str = f"eps={attack_params[attack_type]['eps']:.3f},iter={attack_params[attack_type]['max_iter']}"
+                    params_str = f"eps={attack_params[attack_type]['eps']:.3f},step={attack_params[attack_type]['eps_step']:.3f},iter={attack_params[attack_type]['max_iter']}"
                 elif attack_type == 'cw':
                     params_str = f"c={attack_params[attack_type]['confidence']:.1f}"
                 elif attack_type == 'deepfool':
-                    params_str = f"overshoot={attack_params[attack_type]['overshoot']:.2f}"
+                    params_str = f"eps={attack_params[attack_type]['eps']:.3f},max_iter={attack_params[attack_type]['max_iter']},nb_grads={attack_params[attack_type]['nb_grads']}"
 
             print(f"{attack_type.upper():<12} "
                   f"{det_results['accuracy']:<10.4f} "
