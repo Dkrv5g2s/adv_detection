@@ -23,7 +23,7 @@ ATTACK_TYPES = ['fgsm', 'pgd']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = ".src//cifar10_cnn.pth"
+MODEL_PATH = "./src/cifar10_cnn.pth"
 TRAINING_EPOCHS = 5
 BATCH_SIZE = 256
 

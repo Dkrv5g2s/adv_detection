@@ -24,7 +24,7 @@ ATTACK_TYPES = ['fgsm','pgd','deepfool']
 TRAIN_SAMPLES = 1000
 TEST_SAMPLES = 500
 
-MODEL_PATH = ".src//cifar10_cnn.pth"
+MODEL_PATH = "./src/cifar10_cnn.pth"
 TRAINING_EPOCHS = 140
 BATCH_SIZE = 256
 
@@ -53,17 +53,30 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     # noise_std = np.random.uniform(0.01, 0.05)
     clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
 
-
+    import time
 
     # 生成SHAP簽名
     print(f"[{attack_type}] Generating clean SHAP signatures...")
+    start_time = time.time()
     clean_signatures = generate_shap_signatures(model, clean_images, device)
+    clean_time = time.time() - start_time
+    print(f"[{attack_type}] Clean SHAP signatures generated in {clean_time:.2f} seconds")
 
     print(f"[{attack_type}] Generating noisy clean SHAP signatures...")
+    start_time = time.time()
     clean_signatures_noisy = generate_shap_signatures(model, clean_images_noisy, device)
+    noisy_time = time.time() - start_time
+    print(f"[{attack_type}] Noisy clean SHAP signatures generated in {noisy_time:.2f} seconds")
 
     print(f"[{attack_type}] Generating adversarial SHAP signatures...")
+    start_time = time.time()
     adv_signatures = generate_shap_signatures(model, adv_images, device)
+    adv_time = time.time() - start_time
+    print(f"[{attack_type}] Adversarial SHAP signatures generated in {adv_time:.2f} seconds")
+
+    # 總時間統計
+    total_shap_time = clean_time + noisy_time + adv_time
+    print(f"[{attack_type}] Total SHAP signature generation time: {total_shap_time:.2f} seconds")
 
     # 計算特徵差異
     clean_features_diff = extract_feature_differences(clean_signatures, clean_signatures_noisy)
