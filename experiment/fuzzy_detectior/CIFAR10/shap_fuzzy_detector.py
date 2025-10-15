@@ -47,32 +47,36 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     # 確保樣本數量一致
     min_samples = min(len(clean_data['images']), len(adv_data['images']))
     clean_images = clean_data['images'][:min_samples]
+    clean_labels = clean_data['labels'][:min_samples]  # 新增
     adv_images = adv_data['images'][:min_samples]
+    adv_labels = adv_data['labels'][:min_samples]      # 新增
 
     # 為clean圖片添加微小噪音
-    # noise_std = np.random.uniform(0.01, 0.05)
-    clean_images_noisy = clean_images #+ np.random.normal(0, noise_std, clean_images.shape)
+    clean_images_noisy = clean_images
 
     import time
 
-    # 生成SHAP簽名
+    # 生成SHAP簽名（新增labels參數）
     print(f"[{attack_type}] Generating clean SHAP signatures...")
     start_time = time.time()
-    clean_signatures = generate_shap_signatures(model, clean_images, device)
+    clean_signatures = generate_shap_signatures(model, clean_images, clean_labels, device)
     clean_time = time.time() - start_time
     print(f"[{attack_type}] Clean SHAP signatures generated in {clean_time:.2f} seconds")
 
     print(f"[{attack_type}] Generating noisy clean SHAP signatures...")
     start_time = time.time()
-    clean_signatures_noisy = generate_shap_signatures(model, clean_images_noisy, device)
+    clean_signatures_noisy = generate_shap_signatures(model, clean_images_noisy, clean_labels, device)
     noisy_time = time.time() - start_time
     print(f"[{attack_type}] Noisy clean SHAP signatures generated in {noisy_time:.2f} seconds")
 
     print(f"[{attack_type}] Generating adversarial SHAP signatures...")
     start_time = time.time()
-    adv_signatures = generate_shap_signatures(model, adv_images, device)
+    adv_signatures = generate_shap_signatures(model, adv_images, adv_labels, device)
     adv_time = time.time() - start_time
     print(f"[{attack_type}] Adversarial SHAP signatures generated in {adv_time:.2f} seconds")
+
+
+
 
     # 總時間統計
     total_shap_time = clean_time + noisy_time + adv_time

@@ -70,23 +70,24 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     # 確保樣本數量一致
     min_samples = min(len(clean_data['images']), len(adv_data['images']))
     clean_images = clean_data['images'][:min_samples]
+    clean_labels = clean_data['labels'][:min_samples]  # 新增：取得clean標籤
     adv_images = adv_data['images'][:min_samples]
+    adv_labels = adv_data['labels'][:min_samples]      # 新增：取得adversarial標籤
 
     # 為clean圖片添加微小噪音
-    # noise_std = np.random.uniform(0.01, 0.05)
-    clean_images_noisy = clean_images  # + np.random.normal(0, noise_std, clean_images.shape)
+    clean_images_noisy = clean_images
 
-    # 生成SHAP簽名
+    # 生成SHAP簽名 - 修改：傳入labels參數
     print(f"[{attack_type}] Generating clean SHAP signatures...")
-    clean_signatures = generate_shap_signatures(model, clean_images, device)
+    clean_signatures = generate_shap_signatures(model, clean_images, clean_labels, device)
 
     print(f"[{attack_type}] Generating noisy clean SHAP signatures...")
-    clean_signatures_noisy = generate_shap_signatures(model, clean_images_noisy, device)
+    clean_signatures_noisy = generate_shap_signatures(model, clean_images_noisy, clean_labels, device)
 
     print(f"[{attack_type}] Generating adversarial SHAP signatures...")
-    adv_signatures = generate_shap_signatures(model, adv_images, device)
+    adv_signatures = generate_shap_signatures(model, adv_images, adv_labels, device)
 
-    # 計算特徵差異
+    # 其餘代碼保持不變...
     clean_features_diff = extract_feature_differences(clean_signatures, clean_signatures_noisy)
     adv_features_diff = extract_feature_differences(clean_signatures, adv_signatures)
 
@@ -108,14 +109,15 @@ def prepare_detector_data(model, clean_data, adv_data, attack_type, device):
     adv_features_diff = torch.tensor(adv_features_diff, dtype=torch.float32, device=device)
 
     # 準備標籤 (0: clean, 1: adversarial)
-    clean_labels = torch.zeros(len(clean_features_diff), dtype=torch.long, device=device)
-    adv_labels = torch.ones(len(adv_features_diff), dtype=torch.long, device=device)
+    clean_labels_tensor = torch.zeros(len(clean_features_diff), dtype=torch.long, device=device)
+    adv_labels_tensor = torch.ones(len(adv_features_diff), dtype=torch.long, device=device)
 
     # 合併資料和標籤
     X = torch.cat([clean_features_diff, adv_features_diff], dim=0)
-    y = torch.cat([clean_labels, adv_labels], dim=0)
+    y = torch.cat([clean_labels_tensor, adv_labels_tensor], dim=0)
 
     return X, y
+
 
 
 class MLPDetector(nn.Module):

@@ -50,13 +50,14 @@ def extract_shap_signature(shap_values):
     return signatures
 
 
-def generate_shap_signatures(model, images, device, batch_size=16):
+def generate_shap_signatures(model, images, labels, device, batch_size=16):  # 新增labels參數
     """
     生成SHAP簽名，輸出為10*10=100維
 
     Args:
         model: 訓練好的CNN模型
         images: 輸入圖像 (numpy array)
+        labels: 對應的標籤 (numpy array)  # 新增
         device: 計算設備
         batch_size: 批次大小
 
@@ -70,8 +71,21 @@ def generate_shap_signatures(model, images, device, batch_size=16):
     # 建立logit到softmax的分類器
     logit_classifier = LogitToSoftmax().to(device)
 
-    # 建立背景樣本（隨機選擇100個樣本作為背景）
-    background_indices = np.random.choice(len(logits), min(100, len(logits)), replace=False)
+    # 修改：按類別建立背景樣本
+    unique_labels = np.unique(labels)
+    background_indices = []
+
+    for label in unique_labels:
+        label_indices = np.where(labels == label)[0]
+        # 每個類別最多選擇10個樣本，總共不超過100個
+        n_samples_per_class = min(10, len(label_indices))
+        selected = np.random.choice(label_indices, n_samples_per_class, replace=False)
+        background_indices.extend(selected)
+
+    # 確保總數不超過100
+    if len(background_indices) > 100:
+        background_indices = np.random.choice(background_indices, 100, replace=False)
+
     background_tensor = torch.tensor(logits[background_indices], dtype=torch.float32).to(device)
 
     # 建立SHAP解釋器
@@ -87,6 +101,7 @@ def generate_shap_signatures(model, images, device, batch_size=16):
     print(f"Final signatures shape: {signatures.shape}")
 
     return signatures
+
 
 ##############################################################################################################################################################
 # for top 5 logits to calculation
