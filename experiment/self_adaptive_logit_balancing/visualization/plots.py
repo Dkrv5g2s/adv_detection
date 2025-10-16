@@ -13,18 +13,16 @@ class Visualizer:
         plt.rcParams['axes.unicode_minus'] = False
 
     def plot_confusion_matrix(self, cm, save_path='confusion_matrix.png'):
-        """繪製混淆矩陣（與附圖格式相同）"""
-        # 計算百分比
+        cm = cm.T
+
         cm_percentage = np.zeros_like(cm, dtype=float)
         for i in range(cm.shape[0]):
-            row_sum = cm[i, :].sum()
-            if row_sum > 0:
-                cm_percentage[i, :] = cm[i, :] / row_sum
+            col_sum = cm[:, i].sum()
+            if col_sum > 0:
+                cm_percentage[:, i] = cm[:, i] / col_sum
 
-        # 創建圖表
         fig, ax = plt.subplots(figsize=(12, 10))
 
-        # 使用 seaborn 繪製熱圖
         sns.heatmap(cm_percentage, annot=True, fmt='.1%', cmap='Greens',
                     xticklabels=self.attack_types,
                     yticklabels=self.attack_types,
@@ -33,9 +31,9 @@ class Visualizer:
                     linewidths=0.5, linecolor='gray',
                     ax=ax)
 
-        ax.set_xlabel('Predicted Attack Type', fontsize=12, fontweight='bold')
-        ax.set_ylabel('True Attack Type', fontsize=12, fontweight='bold')
-        ax.set_title('Detection Results of Batch Size Equals to 60',
+        ax.set_xlabel('True Attack Type', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Predicted Attack Type', fontsize=12, fontweight='bold')
+        ax.set_title('Detection Results of Batch Size = 60',
                      fontsize=14, fontweight='bold', pad=20)
 
         plt.tight_layout()
@@ -125,36 +123,72 @@ class Visualizer:
         plt.close()
 
     def plot_log_softmax_distribution(self, distribution_stats, save_path='log_softmax_distribution.png'):
-        """繪製 Log-Softmax 分布"""
-        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-        axes = axes.flatten()
+        """繪製 Log-Softmax 分布（與附圖格式相同：Min vs Max 散點圖）"""
+        fig, ax = plt.subplots(figsize=(10, 7))
 
-        stats_types = ['avg_min', 'avg_max', 'avg_mean', 'avg_std']
-        titles = ['Average Minimum', 'Average Maximum', 'Average Mean', 'Average Std Dev']
+        # 定義顏色
+        colors = {
+            'Clean': 'black',
+            'PGD-Linf': 'blue',
+            'APGD-Linf': 'darkorange',
+            'APGDT-Linf': 'dimgray',
+            'Square-Linf': 'gold',
+            'FAB-Linf': 'purple',
+            'PGD-L2': 'green',
+            'CW-L2': 'deepskyblue'
+        }
 
-        for idx, (stat_type, title) in enumerate(zip(stats_types, titles)):
-            ax = axes[idx]
+        # 定義標記形狀
+        markers = {
+            'Clean': 'o',  # 圓形
+            'PGD-Linf': 'D',  # 菱形
+            'APGD-Linf': 's',  # 正方形
+            'APGDT-Linf': '^',  # 上三角
+            'Square-Linf': 'v',  # 下三角
+            'FAB-Linf': '*',  # 星形
+            'PGD-L2': 'p',  # 五角形
+            'CW-L2': 'h'  # 六角形
+        }
 
-            attacks = list(distribution_stats.keys())
-            values = [distribution_stats[attack][stat_type] for attack in attacks]
+        # 定義點大小
+        sizes = {
+            'Clean': 80,
+            'PGD-Linf': 70,
+            'APGD-Linf': 70,
+            'APGDT-Linf': 80,
+            'Square-Linf': 80,
+            'FAB-Linf': 120,  # 星形需要大一點
+            'PGD-L2': 80,
+            'CW-L2': 80
+        }
 
-            colors = ['green' if attack == 'Clean' else 'red' for attack in attacks]
-            bars = ax.bar(attacks, values, color=colors, alpha=0.7, edgecolor='black')
+        # 繪製每個攻擊類型的散點
+        for attack_name, stats in distribution_stats.items():
+            batch_mins = stats.get('batch_mins', [])
+            batch_maxs = stats.get('batch_maxs', [])
 
-            for bar in bars:
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width() / 2., height,
-                        f'{height:.2f}',
-                        ha='center', va='bottom' if height > 0 else 'top',
-                        fontsize=9, fontweight='bold')
+            if len(batch_mins) > 0 and len(batch_maxs) > 0:
+                ax.scatter(
+                    batch_mins, batch_maxs,
+                    c=colors.get(attack_name, 'black'),
+                    marker=markers.get(attack_name, 'o'),
+                    s=sizes.get(attack_name, 80),
+                    label=attack_name,
+                    alpha=0.7,
+                    edgecolors='black',
+                    linewidths=0.8
+                )
 
-            ax.set_xlabel('Attack Type', fontsize=11, fontweight='bold')
-            ax.set_ylabel('Value', fontsize=11, fontweight='bold')
-            ax.set_title(f'Log-Softmax {title}', fontsize=12, fontweight='bold')
-            ax.grid(axis='y', alpha=0.3, linestyle='--')
-            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        ax.set_xlabel('Min Log-Softmax', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Max Log-Softmax', fontsize=12, fontweight='bold')
+        ax.set_title('Log-Softmax Distribution (Batch Average, Batch Size=60)',
+                     fontsize=13, fontweight='bold')
+        ax.legend(loc='best', fontsize=10, framealpha=0.9, ncol=2)
+        ax.grid(True, alpha=0.3, linestyle='--')
 
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"[INFO] Log-Softmax distribution saved to {save_path}")
         plt.close()
+
+

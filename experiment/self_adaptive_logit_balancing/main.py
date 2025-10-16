@@ -191,22 +191,23 @@ def main():
         print(f"  {attack_name:<15}: {acc:>6.2f}%")
 
     # ==================== 步驟 5: 分析 Log-Softmax 分布 ====================
-    print(f"\n{'='*70}")
-    print("STEP 5: Analyzing Log-Softmax Distribution")
-    print(f"{'='*70}\n")
+    print(f"\n{'=' * 70}")
+    print("STEP 5: Analyzing Log-Softmax Distribution (Batch Average)")
+    print(f"{'=' * 70}\n")
 
     distribution_stats = {}
     for attack_name, data_info in adversarial_data.items():
         stats = compute_log_softmax_stats(
-            model, data_info['images'], device
+            model, data_info['images'], device, batch_size=60  # ← 指定 batch_size=60
         )
         distribution_stats[attack_name] = stats
         print(f"  {attack_name:<15}: Min={stats['avg_min']:.3f}, "
-              f"Max={stats['avg_max']:.3f}, Mean={stats['avg_mean']:.3f}")
+              f"Max={stats['avg_max']:.3f}, Mean={stats['avg_mean']:.3f}, "
+              f"Batches={len(stats['batch_mins'])}")
 
     # ==================== 步驟 6: 訓練檢測器 ====================
     print(f"\n{'=' * 70}")
-    print("STEP 6: Training Adversarial Detector")
+    print("STEP 6: Training Adversarial Detector(Batch Average Features)")
     print(f"{'=' * 70}\n")
 
     # 初始化檢測器
@@ -226,9 +227,10 @@ def main():
     # 初始化訓練器（傳入分類模型）
     detector_trainer = DetectorTrainer(
         detector=detector,
-        classifier_model=model,  # ← 重要：傳入 WideResNet 模型
+        classifier_model=model,
         device=device,
-        lr=Config.DETECTOR_LR
+        lr=Config.DETECTOR_LR,
+        batch_size=60
     )
 
     # 準備訓練數據（自動提取 log-softmax 特徵）

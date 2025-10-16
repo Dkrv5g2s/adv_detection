@@ -12,17 +12,19 @@ import numpy as np
 class DetectorTrainer:
     """訓練對抗樣本檢測器"""
 
-    def __init__(self, detector, classifier_model, device, lr=0.001):
+    def __init__(self, detector, classifier_model, device, lr=0.001, batch_size=60):
         """
         Args:
             detector: AdversarialDetectorMLP 模型
             classifier_model: 已訓練的分類模型（用於提取 log-softmax）
             device: 計算設備
             lr: 學習率
+            batch_size: 用於特徵提取的批次大小（預設 60）
         """
         self.detector = detector
         self.classifier_model = classifier_model
         self.device = device
+        self.feature_batch_size = batch_size  # 新增：特徵提取的批次大小
 
         self.optimizer = torch.optim.Adam(detector.parameters(), lr=lr)
         self.criterion = nn.CrossEntropyLoss()
@@ -30,33 +32,70 @@ class DetectorTrainer:
         # 確保分類模型在評估模式
         self.classifier_model.eval()
 
-    def extract_log_softmax_features(self, images):
+    def extract_log_softmax_features_batch_avg(self, images):
         """
-        從圖像中提取 log-softmax 特徵
+        從圖像中提取 log-softmax 特徵（批次平均 + 排序）
+
+        論文方法：
+        1. 提取每個樣本的 log-softmax 值
+        2. 對每個樣本的值進行排序（從小到大）
+        3. 對所有樣本的「第 i 小」值求平均
 
         Args:
             images: numpy array (N, 3, 32, 32) 或 torch tensor
 
         Returns:
-            log_softmax_features: torch tensor (N, num_classes)
+            log_softmax_features: torch tensor (N//batch_size, num_classes)
+                每個特徵是 batch_size 個樣本排序後的平均
         """
         # 轉換為 tensor
         if isinstance(images, np.ndarray):
             images = torch.FloatTensor(images)
 
         images = images.to(self.device)
+        num_samples = len(images)
 
         # 提取特徵
         self.classifier_model.eval()
-        with torch.no_grad():
-            logits = self.classifier_model(images)
-            log_softmax_features = F.log_softmax(logits, dim=1)
+        batch_features_list = []
 
-        return log_softmax_features
+        with torch.no_grad():
+            # 按照 batch_size 分批處理
+            for i in range(0, num_samples, self.feature_batch_size):
+                batch_images = images[i:i + self.feature_batch_size]
+
+                # 如果最後一批不足 batch_size，跳過
+                if len(batch_images) < self.feature_batch_size:
+                    continue
+
+                # 提取 log-softmax
+                logits = self.classifier_model(batch_images)
+                log_softmax = - F.log_softmax(logits, dim=1)  # (batch_size, num_classes)
+
+                # 對每個樣本的 log-softmax 值進行排序
+                log_softmax_sorted, _ = torch.sort(log_softmax, dim=1)  # (batch_size, num_classes)
+                # 排序後：每一行都是從小到大排列
+
+                # 計算該批次的平均值（對每個位置求平均）
+                batch_avg = log_softmax_sorted.mean(dim=0, keepdim=True)  # (1, num_classes)
+                # batch_avg[0] = 所有樣本「最小值」的平均
+                # batch_avg[1] = 所有樣本「第2小值」的平均
+                # ...
+                # batch_avg[K-1] = 所有樣本「最大值」的平均
+
+                batch_features_list.append(batch_avg)
+
+        # 合併所有批次的平均特徵
+        if len(batch_features_list) > 0:
+            batch_features = torch.cat(batch_features_list, dim=0)  # (num_batches, num_classes)
+        else:
+            batch_features = torch.empty(0, logits.shape[1]).to(self.device)
+
+        return batch_features
 
     def prepare_training_data(self, adversarial_data):
         """
-        準備訓練數據
+        準備訓練數據（使用批次平均）
 
         Args:
             adversarial_data: dict，格式為
@@ -67,21 +106,21 @@ class DetectorTrainer:
                 }
 
         Returns:
-            X: Log-softmax 特徵 (N, num_classes)
-            y: 攻擊類型標籤 (N,)
+            X: Log-softmax 批次平均特徵 (N_batches, num_classes)
+            y: 攻擊類型標籤 (N_batches,)
         """
-        print("\n[INFO] Preparing training data...")
+        print(f"\n[INFO] Preparing training data (Batch size: {self.feature_batch_size})...")
 
         # 攻擊類型到標籤的映射
         attack_to_label = {
             'Clean': 0,
-            'PGD': 1,
+            'PGD-Linf': 1,
             'PGD-L2': 2,
-            'APGD': 3,
-            'APGDT': 4,
-            'Square': 5,
-            'FAB': 6,
-            'CW': 7
+            'APGD-Linf': 3,
+            'APGDT-Linf': 4,
+            'Square-Linf': 5,
+            'FAB-Linf': 6,
+            'CW-L2': 7
         }
 
         X_list = []
@@ -93,31 +132,24 @@ class DetectorTrainer:
             images = data_info['images']
             num_samples = len(images)
 
-            # 提取 log-softmax 特徵（分批處理以節省記憶體）
-            batch_size = 100
-            features_list = []
+            # 提取批次平均特徵
+            batch_features = self.extract_log_softmax_features_batch_avg(images)
+            num_batches = len(batch_features)
 
-            for i in range(0, num_samples, batch_size):
-                batch_images = images[i:i+batch_size]
-                batch_features = self.extract_log_softmax_features(batch_images)
-                features_list.append(batch_features.cpu())
-
-            features = torch.cat(features_list, dim=0)
-
-            # 創建標籤
+            # 創建標籤（每個批次一個標籤）
             attack_label = attack_to_label[attack_name]
-            labels = torch.full((num_samples,), attack_label, dtype=torch.long)
+            labels = torch.full((num_batches,), attack_label, dtype=torch.long)
 
-            X_list.append(features)
+            X_list.append(batch_features.cpu())
             y_list.append(labels)
 
-            print(f"    ✓ {attack_name}: {features.shape[0]} samples, label={attack_label}")
+            print(f"    ✓ {attack_name}: {num_samples} samples → {num_batches} batches (avg), label={attack_label}")
 
         # 合併所有數據
         X = torch.cat(X_list, dim=0)
         y = torch.cat(y_list, dim=0)
 
-        print(f"\n[INFO] Total training data: {X.shape[0]} samples")
+        print(f"\n[INFO] Total training data: {X.shape[0]} batch averages")
         print(f"  Feature shape: {X.shape}")
         print(f"  Label shape: {y.shape}")
         print(f"  Label distribution:")
@@ -138,7 +170,7 @@ class DetectorTrainer:
             X_val: 驗證特徵 (N_val, num_classes)
             y_val: 驗證標籤 (N_val,)
             epochs: 訓練輪數
-            batch_size: 批次大小
+            batch_size: 訓練批次大小（注意：這是訓練檢測器的 batch size）
 
         Returns:
             best_val_acc: 最佳驗證準確率

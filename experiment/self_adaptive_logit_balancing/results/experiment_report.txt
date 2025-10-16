@@ -11,63 +11,63 @@ Training Epochs: 100
 Beta (β): 0.02
 Sigma (σ): 0.0941
 Detector Hidden Dim: 128
-Detector Epochs: 50
+Detector Epochs: 120
 
 2. Model Robustness Results
 ----------------------------------------------------------------------
 Clean          :  79.60%
-PGD            :  66.10%
+PGD-Linf       :  66.10%
 PGD-L2         :  67.30%
-APGD           :  62.90%
-Square         :  28.20%
-APGDT          :  15.50%
-FAB            :  27.50%
-CW             :  55.90%
+APGD-Linf      :  62.90%
+Square-Linf    :  28.20%
+APGDT-Linf     :  15.50%
+FAB-Linf       :  27.50%
+CW-L2          :  55.90%
 
 3. Detector Performance
 ----------------------------------------------------------------------
-Overall Accuracy: 27.00%
+Overall Accuracy: 50.00%
 
 Per-Class Accuracy:
-  Clean          :  22.50%
-  PGD            :   3.00%
-  PGD-L2         :  70.00%
-  APGD           :  15.50%
-  APGDT          :  47.50%
-  Square         :  47.00%
-  FAB            :   6.50%
-  CW             :   4.00%
+  Clean          :  66.67%
+  PGD-Linf       : 100.00%
+  PGD-L2         :   0.00%
+  APGD-Linf      :   0.00%
+  APGDT-Linf     :  66.67%
+  Square-Linf    : 100.00%
+  FAB-Linf       :  75.00%
+  CW-L2          :   0.00%
 
 4. Confusion Matrix (Percentages)
 ----------------------------------------------------------------------
-True \ Pred      Clean       PGD    PGD-L2      APGD     APGDT    Square       FAB        CW
-Clean            22.5%      2.0%     18.5%      0.5%     18.0%     26.5%      8.0%      4.0%
-PGD               1.0%      3.0%     74.5%      7.0%      4.5%      9.0%      0.0%      1.0%
-PGD-L2            1.0%      2.5%     70.0%     11.0%      3.0%     11.5%      0.5%      0.5%
-APGD             23.0%      4.5%     28.5%     15.5%     11.0%     12.0%      4.0%      1.5%
-APGDT            14.5%      0.5%      7.5%      2.0%     47.5%     18.0%      3.5%      6.5%
-Square            8.0%      1.5%      2.5%      2.0%     23.0%     47.0%      9.0%      7.0%
-FAB              15.5%      1.5%     13.5%      1.0%     17.0%     37.5%      6.5%      7.5%
-CW               19.0%      1.5%     15.5%      0.5%     14.5%     35.5%      9.5%      4.0%
+True \ Pred      Clean  PGD-Linf    PGD-L2 APGD-LinfAPGDT-LinfSquare-Linf  FAB-Linf     CW-L2
+Clean            66.7%      0.0%      0.0%      0.0%      0.0%      0.0%     33.3%      0.0%
+PGD-Linf          0.0%    100.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
+PGD-L2            0.0%    100.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
+APGD-Linf         0.0%      0.0%      0.0%      0.0%      0.0%     50.0%     50.0%      0.0%
+APGDT-Linf        0.0%      0.0%      0.0%      0.0%     66.7%      0.0%     33.3%      0.0%
+Square-Linf       0.0%      0.0%      0.0%      0.0%      0.0%    100.0%      0.0%      0.0%
+FAB-Linf          0.0%      0.0%      0.0%      0.0%      0.0%     25.0%     75.0%      0.0%
+CW-L2             0.0%      0.0%      0.0%      0.0%      0.0%     33.3%     66.7%      0.0%
 
 5. Log-Softmax Distribution Statistics
 ----------------------------------------------------------------------
 Clean:
-  Min: -4.7736, Max: -1.1400, Mean: -3.5599, Std: 1.9412
-PGD:
-  Min: -4.2272, Max: -1.6017, Mean: -3.3738, Std: 2.2384
+  Min: 1.1387, Max: 4.7769, Mean: 3.5630, Std: 0.1431
+PGD-Linf:
+  Min: 1.6028, Max: 4.2186, Mean: 3.3673, Std: 0.2081
 PGD-L2:
-  Min: -4.2469, Max: -1.6124, Mean: -3.3880, Std: 2.2813
-APGD:
-  Min: -5.3623, Max: -1.1570, Mean: -4.0144, Std: 2.5845
-Square:
-  Min: -5.7822, Max: -0.9624, Mean: -4.1791, Std: 2.2130
-APGDT:
-  Min: -5.2531, Max: -1.0868, Mean: -3.7019, Std: 2.0004
-FAB:
-  Min: -5.1356, Max: -1.1178, Mean: -3.7820, Std: 2.0772
-CW:
-  Min: -5.1778, Max: -1.0887, Mean: -3.8057, Std: 2.0683
+  Min: 1.6131, Max: 4.2382, Mean: 3.3810, Std: 0.2298
+APGD-Linf:
+  Min: 1.1534, Max: 5.3720, Mean: 4.0180, Std: 0.2260
+Square-Linf:
+  Min: 0.9620, Max: 5.7881, Mean: 4.1854, Std: 0.1232
+APGDT-Linf:
+  Min: 1.0877, Max: 5.2670, Mean: 3.7098, Std: 0.1486
+FAB-Linf:
+  Min: 1.1142, Max: 5.1526, Mean: 3.7939, Std: 0.1294
+CW-L2:
+  Min: 1.0871, Max: 5.1929, Mean: 3.8165, Std: 0.1153
 
 ======================================================================
 Experiment Completed Successfully!

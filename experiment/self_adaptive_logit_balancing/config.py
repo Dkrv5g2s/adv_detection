@@ -37,21 +37,21 @@ class Config:
     # 攻擊類型（依序）
     ATTACK_TYPES = [
         'Clean',  # 0
-        'PGD',  # 1
+        'PGD-Linf',  # 1
         'PGD-L2',  # 2
-        'APGD',  # 3
-        'APGDT',  # 4
-        'Square',  # 5
-        'FAB',  # 6
-        'CW'  # 7
+        'APGD-Linf',  # 3
+        'APGDT-Linf',  # 4
+        'Square-Linf',  # 5
+        'FAB-Linf',  # 6
+        'CW-L2'  # 7
     ]
 
     # 檢測器配置
     DETECTOR_HIDDEN_DIM = 128
     DETECTOR_DROPOUT = 0.3
     DETECTOR_LR = 0.001
-    DETECTOR_EPOCHS = 50
-    DETECTOR_BATCH_SIZE = 128
+    DETECTOR_EPOCHS = 120
+    DETECTOR_BATCH_SIZE = 8
 
 
     # 保存路徑

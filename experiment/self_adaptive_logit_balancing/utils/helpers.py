@@ -84,38 +84,74 @@ def evaluate_model_accuracy(model, dataloader, device):
     return 100. * correct / total
 
 
-def compute_log_softmax_stats(model, images, device):
+def compute_log_softmax_stats(model, images, device, batch_size=60):
     """
-    計算 log-softmax 的統計信息
+    計算 log-softmax 統計數據（批次平均 + 排序版本）
 
     Args:
         model: 分類模型
         images: numpy array (N, 3, 32, 32)
         device: 計算設備
+        batch_size: 批次大小（預設 60）
 
     Returns:
-        stats: dict，包含統計信息
+        stats: dict，包含 min, max, mean, std（基於批次平均）
     """
-    model.eval()
-
     if isinstance(images, np.ndarray):
         images = torch.FloatTensor(images)
 
     images = images.to(device)
+    num_samples = len(images)
+
+    model.eval()
+
+    # 儲存每個批次的統計值
+    batch_mins = []
+    batch_maxs = []
+    batch_means = []
 
     with torch.no_grad():
-        logits = model(images)
-        log_softmax_values = F.log_softmax(logits, dim=1)
+        for i in range(0, num_samples, batch_size):
+            batch_images = images[i:i + batch_size]
 
-    log_softmax_np = log_softmax_values.cpu().numpy()
+            # 如果最後一批不足 batch_size，跳過
+            if len(batch_images) < batch_size:
+                continue
 
-    stats = {
-        'avg_min': float(log_softmax_np.min(axis=1).mean()),
-        'avg_max': float(log_softmax_np.max(axis=1).mean()),
-        'avg_mean': float(log_softmax_np.mean()),
-        'avg_std': float(log_softmax_np.std()),
-        'avg_range': float((log_softmax_np.max(axis=1) - log_softmax_np.min(axis=1)).mean())
-    }
+            # 提取 log-softmax
+            logits = model(batch_images)
+            log_softmax = - F.log_softmax(logits, dim=1)
+
+            # 對每個樣本排序
+            log_softmax_sorted, _ = torch.sort(log_softmax, dim=1)
+
+            # 計算該批次的平均值（排序後再平均）
+            batch_avg = log_softmax_sorted.mean(dim=0)  # (num_classes,)
+
+            # 記錄該批次平均的統計值
+            batch_mins.append(batch_avg[0].item())  # 最小值（排序後第一個）
+            batch_maxs.append(batch_avg[-1].item())  # 最大值（排序後最後一個）
+            batch_means.append(batch_avg.mean().item())
+
+    # 計算所有批次的統計
+    if len(batch_mins) > 0:
+        stats = {
+            'avg_min': np.mean(batch_mins),
+            'avg_max': np.mean(batch_maxs),
+            'avg_mean': np.mean(batch_means),
+            'avg_std': np.std(batch_means),
+            'batch_mins': batch_mins,  # 用於繪圖
+            'batch_maxs': batch_maxs  # 用於繪圖
+        }
+    else:
+        stats = {
+            'avg_min': 0.0,
+            'avg_max': 0.0,
+            'avg_mean': 0.0,
+            'avg_std': 0.0,
+            'batch_mins': [],
+            'batch_maxs': []
+        }
 
     return stats
 

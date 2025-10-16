@@ -117,7 +117,7 @@ class AttackGenerator:
         )
         return self._generate_with_art(attack, dataloader, num_samples)
 
-    def generate_square(self, dataloader, num_samples=1000):
+    def generate_square_linf(self, dataloader, num_samples=1000):
         """生成 Square Attack 對抗樣本"""
         attack = SquareAttack(
             estimator=self.art_classifier,
@@ -144,7 +144,7 @@ class AttackGenerator:
         )
         return self._generate_with_custom(attack, dataloader, num_samples)
 
-    def generate_cw(self, dataloader, num_samples=1000):
+    def generate_cw_l2(self, dataloader, num_samples=1000):
         """生成 CW-L2 對抗樣本"""
         # attack = CarliniL2Method(
         #     classifier=self.art_classifier,
@@ -224,13 +224,13 @@ class AttackGenerator:
 
         attacks = {
             'Clean': self.generate_clean,
-            'PGD': self.generate_pgd_linf,
+            'PGD-Linf': self.generate_pgd_linf,
             'PGD-L2': self.generate_pgd_l2,
-            'APGD': self.generate_apgd_linf,
-            'Square': self.generate_square,
-            'APGDT': self.generate_apgdt_linf,
-            'FAB': self.generate_fab_linf,
-            'CW': self.generate_cw
+            'APGD-Linf': self.generate_apgd_linf,
+            'Square-Linf': self.generate_square_linf,
+            'APGDT-Linf': self.generate_apgdt_linf,
+            'FAB-Linf': self.generate_fab_linf,
+            'CW-L2': self.generate_cw_l2
         }
 
         adversarial_data = {}
