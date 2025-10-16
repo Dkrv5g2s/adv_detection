@@ -1,6 +1,8 @@
 """
-所有對抗攻擊生成器
+所有對抗攻擊生成器（帶緩存功能）
 """
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -11,13 +13,29 @@ from art.attacks.evasion import (
     CarliniL2Method
 )
 from art.estimators.classification import PyTorchClassifier
-from .fab_attack import AutoAttackFABWrapper
 
+from self_adaptive_logit_balancing.attacks.fab_attack import AutoAttackFABWrapper
+
+from self_adaptive_logit_balancing.utils.helpers import (
+    save_adversarial_data,
+    load_adversarial_data,
+    check_cache_exists,
+)
+from self_adaptive_logit_balancing.config import Config
 
 class AttackGenerator:
-    def __init__(self, model, device):
+    def __init__(self, model, device, use_cache=True):
+        """
+        初始化攻擊生成器
+
+        Args:
+            model: 目標模型
+            device: 計算設備
+            use_cache: 是否使用緩存
+        """
         self.model = model
         self.device = device
+        self.use_cache = use_cache
 
         # 創建 ART classifier
         self.art_classifier = PyTorchClassifier(
@@ -128,12 +146,21 @@ class AttackGenerator:
 
     def generate_cw(self, dataloader, num_samples=1000):
         """生成 CW-L2 對抗樣本"""
+        # attack = CarliniL2Method(
+        #     classifier=self.art_classifier,
+        #     initial_const=1.0,
+        #     confidence=0.0,
+        #     max_iter=1000,
+        #     learning_rate=0.01
+        # )
         attack = CarliniL2Method(
             classifier=self.art_classifier,
-            initial_const=1.0,
+            initial_const=1,
             confidence=0.0,
-            max_iter=1000,
-            learning_rate=0.01
+            max_iter=100,  # 比論文少很多
+            learning_rate=0.01,
+            batch_size=16,
+            binary_search_steps=3
         )
         return self._generate_with_art(attack, dataloader, num_samples)
 
@@ -179,8 +206,22 @@ class AttackGenerator:
 
         return {'images': adv_images, 'labels': labels}
 
-    def generate_all_attacks(self, dataloader, num_samples=1000):
-        """生成所有類型的對抗樣本"""
+    def generate_all_attacks(self, dataloader, num_samples=1000,
+                           cache_dir=None, force_regenerate=False):
+        """
+        生成所有類型的對抗樣本（帶緩存功能）
+
+        Args:
+            dataloader: 數據加載器
+            num_samples: 樣本數量
+            cache_dir: 緩存目錄（如果為 None 則不使用緩存）
+            force_regenerate: 是否強制重新生成（忽略緩存）
+
+        Returns:
+            adversarial_data: dict，包含所有攻擊類型的數據
+        """
+
+
         attacks = {
             'Clean': self.generate_clean,
             'PGD': self.generate_pgd_linf,
@@ -193,9 +234,41 @@ class AttackGenerator:
         }
 
         adversarial_data = {}
+        use_cache = self.use_cache and cache_dir is not None and not force_regenerate
+
         for attack_name, attack_func in attacks.items():
-            print(f"\n[INFO] Generating {attack_name} samples...")
+            print(f"\n[INFO] Processing {attack_name} samples...")
+
+            # 獲取緩存路徑
+            if use_cache:
+                cache_path = Config.get_cache_path(attack_name, num_samples)
+
+                # 嘗試從緩存載入
+                if check_cache_exists(cache_path):
+                    print(f"  → Cache found, attempting to load...")
+                    cached_data = load_adversarial_data(cache_path, attack_name)
+
+                    if cached_data is not None:
+                        adversarial_data[attack_name] = cached_data
+                        print(f"  ✓ {attack_name}: Loaded from cache")
+                        continue
+                    else:
+                        print(f"  → Cache corrupted, regenerating...")
+
+            # 生成新的對抗樣本
+            print(f"  → Generating new samples...")
             adversarial_data[attack_name] = attack_func(dataloader, num_samples)
+            adversarial_data[attack_name]['images'] = np.clip(
+                adversarial_data[attack_name]['images'], 0.0, 1.0
+            )
             print(f"  ✓ {attack_name}: {adversarial_data[attack_name]['images'].shape}")
+
+            # 保存到緩存
+            if use_cache:
+                save_adversarial_data(
+                    adversarial_data[attack_name],
+                    cache_path,
+                    attack_name
+                )
 
         return adversarial_data
