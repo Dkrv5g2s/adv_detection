@@ -84,7 +84,7 @@ def evaluate_model_accuracy(model, dataloader, device):
     return 100. * correct / total
 
 
-def compute_log_softmax_stats(model, images, device, batch_size=60):
+def compute_log_softmax_stats(model, images, device, feature_batch_size=60):
     """
     計算 log-softmax 統計數據（批次平均 + 排序版本）
 
@@ -92,7 +92,7 @@ def compute_log_softmax_stats(model, images, device, batch_size=60):
         model: 分類模型
         images: numpy array (N, 3, 32, 32)
         device: 計算設備
-        batch_size: 批次大小（預設 60）
+        feature_batch_size: 批次大小（預設 60）
 
     Returns:
         stats: dict，包含 min, max, mean, std（基於批次平均）
@@ -111,11 +111,11 @@ def compute_log_softmax_stats(model, images, device, batch_size=60):
     batch_means = []
 
     with torch.no_grad():
-        for i in range(0, num_samples, batch_size):
-            batch_images = images[i:i + batch_size]
+        for i in range(0, num_samples, feature_batch_size):
+            batch_images = images[i:i + feature_batch_size]
 
             # 如果最後一批不足 batch_size，跳過
-            if len(batch_images) < batch_size:
+            if len(batch_images) < feature_batch_size:
                 continue
 
             # 提取 log-softmax

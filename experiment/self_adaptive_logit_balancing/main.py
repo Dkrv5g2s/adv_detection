@@ -198,7 +198,7 @@ def main():
     distribution_stats = {}
     for attack_name, data_info in adversarial_data.items():
         stats = compute_log_softmax_stats(
-            model, data_info['images'], device, batch_size=60  # ← 指定 batch_size=60
+            model, data_info['images'], device, feature_batch_size=Config.DETECTOR_FEATURE_BATCH_SIZE
         )
         distribution_stats[attack_name] = stats
         print(f"  {attack_name:<15}: Min={stats['avg_min']:.3f}, "
@@ -230,7 +230,7 @@ def main():
         classifier_model=model,
         device=device,
         lr=Config.DETECTOR_LR,
-        batch_size=60
+        feature_batch_size=Config.DETECTOR_FEATURE_BATCH_SIZE
     )
 
     # 準備訓練數據（自動提取 log-softmax 特徵）
@@ -247,7 +247,7 @@ def main():
     best_acc = detector_trainer.train(
         X_train, y_train, X_test, y_test,
         epochs=Config.DETECTOR_EPOCHS,
-        batch_size=Config.DETECTOR_BATCH_SIZE
+        batch_size=4
     )
 
     # 保存檢測器

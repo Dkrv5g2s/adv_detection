@@ -12,7 +12,7 @@ import numpy as np
 class DetectorTrainer:
     """訓練對抗樣本檢測器"""
 
-    def __init__(self, detector, classifier_model, device, lr=0.001, batch_size=60):
+    def __init__(self, detector, classifier_model, device, lr=0.001, feature_batch_size=60):
         """
         Args:
             detector: AdversarialDetectorMLP 模型
@@ -24,7 +24,7 @@ class DetectorTrainer:
         self.detector = detector
         self.classifier_model = classifier_model
         self.device = device
-        self.feature_batch_size = batch_size  # 新增：特徵提取的批次大小
+        self.feature_batch_size = feature_batch_size  # 新增：特徵提取的批次大小
 
         self.optimizer = torch.optim.Adam(detector.parameters(), lr=lr)
         self.criterion = nn.CrossEntropyLoss()
@@ -160,7 +160,7 @@ class DetectorTrainer:
 
         return X, y
 
-    def train(self, X_train, y_train, X_val, y_val, epochs=50, batch_size=128):
+    def train(self, X_train, y_train, X_val, y_val, epochs=100, batch_size=1):
         """
         訓練檢測器
 

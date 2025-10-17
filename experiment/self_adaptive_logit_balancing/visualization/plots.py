@@ -4,7 +4,7 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-
+from self_adaptive_logit_balancing.config import Config
 
 class Visualizer:
     def __init__(self, attack_types):
@@ -33,7 +33,7 @@ class Visualizer:
 
         ax.set_xlabel('True Attack Type', fontsize=12, fontweight='bold')
         ax.set_ylabel('Predicted Attack Type', fontsize=12, fontweight='bold')
-        ax.set_title('Detection Results of Batch Size = 60',
+        ax.set_title(f'Detection Results (Feature Batch Size= {Config.DETECTOR_FEATURE_BATCH_SIZE})',
                      fontsize=14, fontweight='bold', pad=20)
 
         plt.tight_layout()
@@ -181,7 +181,7 @@ class Visualizer:
 
         ax.set_xlabel('Min Log-Softmax', fontsize=12, fontweight='bold')
         ax.set_ylabel('Max Log-Softmax', fontsize=12, fontweight='bold')
-        ax.set_title('Log-Softmax Distribution (Batch Average, Batch Size=60)',
+        ax.set_title(f'Log-Softmax Distribution (Feature Batch Size= {Config.DETECTOR_FEATURE_BATCH_SIZE})',
                      fontsize=13, fontweight='bold')
         ax.legend(loc='best', fontsize=10, framealpha=0.9, ncol=2)
         ax.grid(True, alpha=0.3, linestyle='--')

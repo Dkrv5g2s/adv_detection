@@ -15,59 +15,59 @@ Detector Epochs: 120
 
 2. Model Robustness Results
 ----------------------------------------------------------------------
-Clean          :  79.60%
-PGD-Linf       :  66.10%
-PGD-L2         :  67.30%
-APGD-Linf      :  62.90%
-Square-Linf    :  28.20%
-APGDT-Linf     :  15.50%
-FAB-Linf       :  27.50%
-CW-L2          :  55.90%
+Clean          :  84.20%
+PGD-Linf       :  77.00%
+PGD-L2         :  76.20%
+APGD-Linf      :  73.50%
+Square-Linf    :  79.70%
+APGDT-Linf     :  61.70%
+FAB-Linf       :  82.10%
+CW-L2          :  82.60%
 
 3. Detector Performance
 ----------------------------------------------------------------------
-Overall Accuracy: 50.00%
+Overall Accuracy: 31.00%
 
 Per-Class Accuracy:
-  Clean          :  66.67%
-  PGD-Linf       : 100.00%
-  PGD-L2         :   0.00%
-  APGD-Linf      :   0.00%
-  APGDT-Linf     :  66.67%
-  Square-Linf    : 100.00%
-  FAB-Linf       :  75.00%
-  CW-L2          :   0.00%
+  Clean          :  50.00%
+  PGD-Linf       :  75.00%
+  PGD-L2         :   7.69%
+  APGD-Linf      :  15.38%
+  APGDT-Linf     :  53.85%
+  Square-Linf    :  33.33%
+  FAB-Linf       :   0.00%
+  CW-L2          :  16.67%
 
 4. Confusion Matrix (Percentages)
 ----------------------------------------------------------------------
 True \ Pred      Clean  PGD-Linf    PGD-L2 APGD-LinfAPGDT-LinfSquare-Linf  FAB-Linf     CW-L2
-Clean            66.7%      0.0%      0.0%      0.0%      0.0%      0.0%     33.3%      0.0%
-PGD-Linf          0.0%    100.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
-PGD-L2            0.0%    100.0%      0.0%      0.0%      0.0%      0.0%      0.0%      0.0%
-APGD-Linf         0.0%      0.0%      0.0%      0.0%      0.0%     50.0%     50.0%      0.0%
-APGDT-Linf        0.0%      0.0%      0.0%      0.0%     66.7%      0.0%     33.3%      0.0%
-Square-Linf       0.0%      0.0%      0.0%      0.0%      0.0%    100.0%      0.0%      0.0%
-FAB-Linf          0.0%      0.0%      0.0%      0.0%      0.0%     25.0%     75.0%      0.0%
-CW-L2             0.0%      0.0%      0.0%      0.0%      0.0%     33.3%     66.7%      0.0%
+Clean            50.0%     16.7%      0.0%     16.7%      0.0%     16.7%      0.0%      0.0%
+PGD-Linf          0.0%     75.0%     16.7%      8.3%      0.0%      0.0%      0.0%      0.0%
+PGD-L2            0.0%     92.3%      7.7%      0.0%      0.0%      0.0%      0.0%      0.0%
+APGD-Linf        53.8%      7.7%      0.0%     15.4%      7.7%      0.0%      0.0%     15.4%
+APGDT-Linf        7.7%      0.0%      0.0%      0.0%     53.8%     30.8%      7.7%      0.0%
+Square-Linf      25.0%      0.0%      0.0%      0.0%     33.3%     33.3%      0.0%      8.3%
+FAB-Linf         38.5%     15.4%      0.0%      0.0%      7.7%     23.1%      0.0%     15.4%
+CW-L2            50.0%      8.3%      0.0%      0.0%      0.0%     25.0%      0.0%     16.7%
 
 5. Log-Softmax Distribution Statistics
 ----------------------------------------------------------------------
 Clean:
-  Min: 1.1387, Max: 4.7769, Mean: 3.5630, Std: 0.1431
+  Min: 1.2104, Max: 4.8533, Mean: 3.6570, Std: 0.3648
 PGD-Linf:
-  Min: 1.6028, Max: 4.2186, Mean: 3.3673, Std: 0.2081
+  Min: 1.4128, Max: 4.2245, Mean: 3.2315, Std: 0.3284
 PGD-L2:
-  Min: 1.6131, Max: 4.2382, Mean: 3.3810, Std: 0.2298
+  Min: 1.4171, Max: 4.1969, Mean: 3.2170, Std: 0.3143
 APGD-Linf:
-  Min: 1.1534, Max: 5.3720, Mean: 4.0180, Std: 0.2260
+  Min: 1.2036, Max: 4.9017, Mean: 3.6478, Std: 0.3555
 Square-Linf:
-  Min: 0.9620, Max: 5.7881, Mean: 4.1854, Std: 0.1232
+  Min: 1.0715, Max: 5.4203, Mean: 4.0079, Std: 0.3687
 APGDT-Linf:
-  Min: 1.0877, Max: 5.2670, Mean: 3.7098, Std: 0.1486
+  Min: 0.9636, Max: 5.8156, Mean: 4.2038, Std: 0.3978
 FAB-Linf:
-  Min: 1.1142, Max: 5.1526, Mean: 3.7939, Std: 0.1294
+  Min: 1.1725, Max: 5.0524, Mean: 3.7799, Std: 0.3718
 CW-L2:
-  Min: 1.0871, Max: 5.1929, Mean: 3.8165, Std: 0.1153
+  Min: 1.1521, Max: 5.0789, Mean: 3.7937, Std: 0.3734
 
 ======================================================================
 Experiment Completed Successfully!
