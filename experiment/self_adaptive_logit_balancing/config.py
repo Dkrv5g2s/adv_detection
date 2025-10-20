@@ -29,7 +29,7 @@ class Config:
     LB_WEIGHT_DECAY = 5e-4
 
     # 對抗樣本生成配置
-    ADV_NUM_SAMPLES = 1000
+    ADV_NUM_SAMPLES = 3000
     PGD_EPS = 8 / 255
     PGD_ALPHA = 2 / 255
     PGD_STEPS = 10
@@ -48,14 +48,14 @@ class Config:
 
     # 檢測器配置
     DETECTOR_HIDDEN_DIM = 128
-    DETECTOR_DROPOUT = 0.3
+    DETECTOR_DROPOUT = 0.0
     DETECTOR_LR = 0.001
     DETECTOR_EPOCHS = 120
-    DETECTOR_FEATURE_BATCH_SIZE = 16
+    DETECTOR_FEATURE_BATCH_SIZE = 120
 
 
     # 保存路徑
-    MODEL_SAVE_PATH = 'logit_balancing_model.pth'
+    MODEL_SAVE_PATH = 'logit_balancing_model(82.65).pth'
     DETECTOR_SAVE_PATH = 'adversarial_detector.pth'
     RESULTS_DIR = './results'
 
@@ -67,19 +67,21 @@ class Config:
     FORCE_REGENERATE = False  # 是否強制重新生成（忽略緩存）
 
     @classmethod
-    def get_cache_path(cls, attack_name, num_samples):
+    def get_cache_path(cls, attack_name, num_samples, model_name=None):
         """
-        獲取特定攻擊的緩存文件路徑
+        獲取特定攻擊的緩存文件路徑，加入模型名稱
 
         Args:
             attack_name: 攻擊名稱
             num_samples: 樣本數量
+            model_name: 模型名稱
 
         Returns:
             緩存文件路徑
         """
         os.makedirs(cls.ADVERSARIAL_CACHE_DIR, exist_ok=True)
-        filename = f"{attack_name}_{num_samples}samples.npz"
+        model_suffix = f"_{model_name}" if model_name else ""
+        filename = f"{attack_name}_{num_samples}samples{model_suffix}.npz"
         return os.path.join(cls.ADVERSARIAL_CACHE_DIR, filename)
 
     @classmethod

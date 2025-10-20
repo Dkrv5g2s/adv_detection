@@ -207,7 +207,7 @@ class AttackGenerator:
         return {'images': adv_images, 'labels': labels}
 
     def generate_all_attacks(self, dataloader, num_samples=1000,
-                           cache_dir=None, force_regenerate=False):
+                             cache_dir=None, force_regenerate=False):
         """
         生成所有類型的對抗樣本（帶緩存功能）
 
@@ -220,8 +220,6 @@ class AttackGenerator:
         Returns:
             adversarial_data: dict，包含所有攻擊類型的數據
         """
-
-
         attacks = {
             'Clean': self.generate_clean,
             'PGD-Linf': self.generate_pgd_linf,
@@ -235,13 +233,14 @@ class AttackGenerator:
 
         adversarial_data = {}
         use_cache = self.use_cache and cache_dir is not None and not force_regenerate
+        model_name = os.path.splitext(os.path.basename(Config.MODEL_SAVE_PATH))[0]
 
         for attack_name, attack_func in attacks.items():
             print(f"\n[INFO] Processing {attack_name} samples...")
 
             # 獲取緩存路徑
             if use_cache:
-                cache_path = Config.get_cache_path(attack_name, num_samples)
+                cache_path = Config.get_cache_path(attack_name, num_samples, model_name)
 
                 # 嘗試從緩存載入
                 if check_cache_exists(cache_path):
