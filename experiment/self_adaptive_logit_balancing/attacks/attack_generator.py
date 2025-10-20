@@ -1,21 +1,7 @@
-"""
-所有對抗攻擊生成器（帶緩存功能）
-"""
-import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+import os
 import torch
-import torch.nn.functional as F
 import numpy as np
-from art.attacks.evasion import (
-    ProjectedGradientDescent,
-    AutoProjectedGradientDescent,
-    SquareAttack,
-    CarliniL2Method
-)
-from art.estimators.classification import PyTorchClassifier
-
-from self_adaptive_logit_balancing.attacks.fab_attack import AutoAttackFABWrapper
-
+import torchattacks
 from self_adaptive_logit_balancing.utils.helpers import (
     save_adversarial_data,
     load_adversarial_data,
@@ -33,18 +19,9 @@ class AttackGenerator:
             device: 計算設備
             use_cache: 是否使用緩存
         """
-        self.model = model
+        self.model = model.to(device)
         self.device = device
         self.use_cache = use_cache
-
-        # 創建 ART classifier
-        self.art_classifier = PyTorchClassifier(
-            model=model,
-            loss=torch.nn.CrossEntropyLoss(),
-            input_shape=(3, 32, 32),
-            nb_classes=10,
-            clip_values=(0, 1)
-        )
 
     def generate_clean(self, dataloader, num_samples=1000):
         """生成乾淨樣本"""
@@ -63,139 +40,68 @@ class AttackGenerator:
 
     def generate_pgd_linf(self, dataloader, num_samples=1000):
         """生成 PGD-L∞ 對抗樣本"""
-        attack = ProjectedGradientDescent(
-            estimator=self.art_classifier,
-            eps=8 / 255,
-            eps_step=2 / 255,
-            max_iter=20,
-            norm=np.inf
+        attack = torchattacks.PGD(
+            self.model, eps=8 / 255, alpha=2 / 255, steps=20,random_start=True
         )
-        return self._generate_with_art(attack, dataloader, num_samples)
+        return self._generate_with_torchattack(attack, dataloader, num_samples)
 
     def generate_pgd_l2(self, dataloader, num_samples=1000):
         """生成 PGD-L2 對抗樣本"""
-        attack = ProjectedGradientDescent(
-            estimator=self.art_classifier,
-            eps=1.0,
-            eps_step=0.2,
-            max_iter=40,
-            norm=2
+        attack = torchattacks.PGDL2(
+            self.model, eps=1.0, alpha=0.2, steps=40,random_start=True
         )
-        return self._generate_with_art(attack, dataloader, num_samples)
+        return self._generate_with_torchattack(attack, dataloader, num_samples)
 
     def generate_apgd_linf(self, dataloader, num_samples=1000):
-        """
-        生成 APGD-L∞ 對抗樣本 (Table 1 第二行)
-        eps = 8/255, alpha = 2/255, steps = 40, sampling = 10
-        """
-        attack = AutoProjectedGradientDescent(
-            estimator=self.art_classifier,
-            norm=np.inf,
-            eps=8 / 255,
-            eps_step=2 / 255,
-            max_iter=40,
-            nb_random_init=10,
-            loss_type='cross_entropy',
-            verbose=False
+        """生成 APGD-L∞ 對抗樣本"""
+        attack = torchattacks.APGD(
+            self.model, eps=8 / 255, steps=40, loss='ce'
         )
-        return self._generate_with_art(attack, dataloader, num_samples)
+        return self._generate_with_torchattack(attack, dataloader, num_samples)
 
     def generate_apgdt_linf(self, dataloader, num_samples=1000):
-        """
-        生成 APGDT-L∞ 對抗樣本 (Table 1 第三行)
-        eps = 8/255, steps = 100, restarts = 1, eot_iter = 1, rho = 0.75
-        注意: eot_iter 和 rho 在 ART 源碼中已實現
-        """
-        attack = AutoProjectedGradientDescent(
-            estimator=self.art_classifier,
-            norm=np.inf,
-            eps=8 / 255,
-            eps_step=2 / 255,
-            max_iter=40,
-            loss_type='difference_logits_ratio',
-            verbose=False
+        """生成 APGDT-L∞ 對抗樣本"""
+        attack = torchattacks.APGD(
+            self.model, eps=8 / 255, steps=100,n_restarts=1,eot_iter=1,rho=0.75, loss='dlr'
         )
-        return self._generate_with_art(attack, dataloader, num_samples)
+        return self._generate_with_torchattack(attack, dataloader, num_samples)
 
     def generate_square_linf(self, dataloader, num_samples=1000):
         """生成 Square Attack 對抗樣本"""
-        attack = SquareAttack(
-            estimator=self.art_classifier,
-            eps=8 / 255,
-            max_iter=5000,
-            nb_restarts=1,
-            p_init=0.85,
-            norm=np.inf
+        attack = torchattacks.Square(
+            self.model, eps=8 / 255, p_init=0.8, n_queries=5000, n_restarts=1
         )
-        return self._generate_with_art(attack, dataloader, num_samples)
+
+        return self._generate_with_torchattack(attack, dataloader, num_samples)
 
     def generate_fab_linf(self, dataloader, num_samples=1000):
-        """
-        生成 FAB-L∞ 對抗樣本 (Table 1 第五行)
-        eps = 8/255, alpha = 0.1, steps = 100, restart = 1
-        """
-        attack = AutoAttackFABWrapper(
-            model=self.model,
-            device=self.device,
-            eps=8 / 255,
-            steps=100,
-            n_restarts=1,
-            alpha_max=0.1
+        """生成 FAB-L∞ 對抗樣本"""
+        attack = torchattacks.FAB(
+            self.model, eps=8 / 255, alpha_max=0.1, steps=100, n_restarts=1
         )
-        return self._generate_with_custom(attack, dataloader, num_samples)
+        return self._generate_with_torchattack(attack, dataloader, num_samples)
 
     def generate_cw_l2(self, dataloader, num_samples=1000):
         """生成 CW-L2 對抗樣本"""
-        # attack = CarliniL2Method(
-        #     classifier=self.art_classifier,
-        #     initial_const=1.0,
-        #     confidence=0.0,
-        #     max_iter=1000,
-        #     learning_rate=0.01
-        # )
-        attack = CarliniL2Method(
-            classifier=self.art_classifier,
-            initial_const=1,
-            confidence=0.0,
-            max_iter=100,  # 比論文少很多
-            learning_rate=0.01,
-            batch_size=16,
-            binary_search_steps=3
+        attack = torchattacks.CW(
+            self.model, c=1.0,kappa=0, steps=1000, lr=0.01
         )
-        return self._generate_with_art(attack, dataloader, num_samples)
+        return self._generate_with_torchattack(attack, dataloader, num_samples)
 
-    def _generate_with_art(self, attack, dataloader, num_samples):
-        """使用 ART 攻擊生成對抗樣本"""
-        images_list, labels_list = [], []
-
-        for images, labels in dataloader:
-            images_list.append(images.cpu().numpy())
-            labels_list.append(labels.cpu().numpy())
-            if len(np.concatenate(images_list)) >= num_samples:
-                break
-
-        images = np.concatenate(images_list)[:num_samples]
-        labels = np.concatenate(labels_list)[:num_samples]
-
-        print(f"  Generating adversarial examples...")
-        adv_images = attack.generate(x=images)
-
-        return {'images': adv_images, 'labels': labels}
-
-    def _generate_with_custom(self, attack, dataloader, num_samples):
-        """使用自定義攻擊生成對抗樣本（與 ART 風格統一）"""
+    def _generate_with_torchattack(self, attack, dataloader, num_samples):
+        """使用 torchattacks 攻擊生成對抗樣本"""
         images_list, labels_list, adv_images_list = [], [], []
 
         for images, labels in dataloader:
-            images_np = images.cpu().numpy()
-            labels_np = labels.cpu().numpy()
+            images, labels = images.to(self.device), labels.to(self.device)
 
             # 生成對抗樣本
-            adv_images_np = attack.generate(x=images_np, y=labels_np)
+            adv_images = attack(images, labels)
 
-            images_list.append(images_np)
-            labels_list.append(labels_np)
-            adv_images_list.append(adv_images_np)
+            # 修正：使用 .detach() 分離張量
+            images_list.append(images.cpu().numpy())
+            labels_list.append(labels.cpu().numpy())
+            adv_images_list.append(adv_images.detach().cpu().numpy())
 
             if len(np.concatenate(images_list)) >= num_samples:
                 break

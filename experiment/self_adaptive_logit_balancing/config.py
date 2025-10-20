@@ -46,12 +46,20 @@ class Config:
         'CW-L2'  # 7
     ]
 
-    # 檢測器配置
-    DETECTOR_HIDDEN_DIM = 128
-    DETECTOR_DROPOUT = 0.0
-    DETECTOR_LR = 0.001
-    DETECTOR_EPOCHS = 120
+    # ========== 檢測器配置 (更新為推薦參數) ==========
+    DETECTOR_HIDDEN_DIMS = [64, 128, 64]  # 多層隱藏層維度
+    DETECTOR_DROPOUT = 0.3  # Dropout 率
+    DETECTOR_LR = 0.001  # 學習率
+    DETECTOR_EPOCHS = 100  # 訓練輪數
     DETECTOR_FEATURE_BATCH_SIZE = 120
+
+    # 檢測器額外配置
+    DETECTOR_WEIGHT_DECAY = 1e-4  # L2 正則化
+    DETECTOR_EARLY_STOPPING_PATIENCE = 20  # Early stopping 耐心值
+    DETECTOR_SCHEDULER_PATIENCE = 10  # 學習率調度器耐心值
+    DETECTOR_SCHEDULER_FACTOR = 0.5  # 學習率衰減因子
+    DETECTOR_GRADIENT_CLIP = 1.0  # 梯度裁剪閾值
+    DETECTOR_TRAIN_VAL_SPLIT = 0.8  # 訓練/驗證集分割比例
 
 
     # 保存路徑
