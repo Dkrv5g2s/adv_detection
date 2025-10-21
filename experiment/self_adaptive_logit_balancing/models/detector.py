@@ -25,12 +25,12 @@ class AdversarialDetectorMLP(nn.Module):
         7: CW-L2
     """
 
-    def __init__(self, num_classes=10, num_attack_types=8, hidden_dim=128, dropout=0.3):
+    def __init__(self, num_classes=10, num_attack_types=8, hidden_dims=None, dropout=0.3):
         """
         Args:
             num_classes: 分類模型的類別數（CIFAR-10 = 10）
             num_attack_types: 攻擊類型數量（包含 Clean）
-            hidden_dim: 隱藏層維度
+            hidden_dims: 隱藏層維度列表，例如 [64, 128, 64]
             dropout: Dropout 比例
         """
         super(AdversarialDetectorMLP, self).__init__()
@@ -38,19 +38,40 @@ class AdversarialDetectorMLP(nn.Module):
         self.num_classes = num_classes
         self.num_attack_types = num_attack_types
 
-        # 多層感知器架構
-        self.fc1 = nn.Linear(num_classes, hidden_dim)
-        self.bn1 = nn.BatchNorm1d(hidden_dim)
+        # 使用預設值或傳入的隱藏層配置
+        if hidden_dims is None:
+            hidden_dims = [64, 128, 64]
 
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim * 2)
-        self.bn2 = nn.BatchNorm1d(hidden_dim * 2)
+        # 動態構建網絡層
+        layers = []
+        input_dim = num_classes
 
-        self.fc3 = nn.Linear(hidden_dim * 2, hidden_dim)
-        self.bn3 = nn.BatchNorm1d(hidden_dim)
+        for i, hidden_dim in enumerate(hidden_dims):
+            layers.append(nn.Linear(input_dim, hidden_dim))
+            layers.append(nn.BatchNorm1d(hidden_dim))
+            layers.append(nn.ReLU())
 
-        self.fc4 = nn.Linear(hidden_dim, num_attack_types)
+            # 最後一層使用較小的 dropout
+            dropout_rate = dropout if i < len(hidden_dims) - 1 else dropout * 0.7
+            layers.append(nn.Dropout(dropout_rate))
 
-        self.dropout = nn.Dropout(dropout)
+            input_dim = hidden_dim
+
+        # 輸出層
+        layers.append(nn.Linear(input_dim, num_attack_types))
+
+        self.network = nn.Sequential(*layers)
+
+        # 權重初始化
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """權重初始化"""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         """
@@ -62,30 +83,10 @@ class AdversarialDetectorMLP(nn.Module):
         Returns:
             logits: 攻擊類型的 logits (batch_size, num_attack_types)
         """
-        # 確保輸入維度正確
         assert x.size(1) == self.num_classes, \
             f"Expected input size (*, {self.num_classes}), got {x.shape}"
 
-        # Layer 1
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = F.relu(x)
-        x = self.dropout(x)
-
-        # Layer 2
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = F.relu(x)
-        x = self.dropout(x)
-
-        # Layer 3
-        x = self.fc3(x)
-        x = self.bn3(x)
-        x = F.relu(x)
-        x = self.dropout(x)
-
-        # Output layer
-        x = self.fc4(x)
+        return self.network(x)
 
         return x
 

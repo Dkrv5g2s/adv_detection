@@ -29,7 +29,7 @@ class Config:
     LB_WEIGHT_DECAY = 5e-4
 
     # 對抗樣本生成配置
-    ADV_NUM_SAMPLES = 3000
+    ADV_NUM_SAMPLES = 10000
     PGD_EPS = 8 / 255
     PGD_ALPHA = 2 / 255
     PGD_STEPS = 10
@@ -50,7 +50,7 @@ class Config:
     DETECTOR_HIDDEN_DIMS = [64, 128, 64]  # 多層隱藏層維度
     DETECTOR_DROPOUT = 0.3  # Dropout 率
     DETECTOR_LR = 0.001  # 學習率
-    DETECTOR_EPOCHS = 100  # 訓練輪數
+    DETECTOR_EPOCHS = 200  # 訓練輪數
     DETECTOR_FEATURE_BATCH_SIZE = 120
 
     # 檢測器額外配置

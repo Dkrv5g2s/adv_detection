@@ -12,22 +12,35 @@ import numpy as np
 class DetectorTrainer:
     """訓練對抗樣本檢測器"""
 
-    def __init__(self, detector, classifier_model, device, lr=0.001, feature_batch_size=60):
+    def __init__(self, detector, classifier_model, device, lr=0.001, weight_decay=1e-4, feature_batch_size=100):
         """
         Args:
             detector: AdversarialDetectorMLP 模型
             classifier_model: 已訓練的分類模型（用於提取 log-softmax）
             device: 計算設備
             lr: 學習率
-            batch_size: 用於特徵提取的批次大小（預設 60）
+            weight_decay: L2 正則化係數
+            feature_batch_size: 用於特徵提取的批次大小
         """
         self.detector = detector
         self.classifier_model = classifier_model
         self.device = device
-        self.feature_batch_size = feature_batch_size  # 新增：特徵提取的批次大小
+        self.feature_batch_size = feature_batch_size
 
-        self.optimizer = torch.optim.Adam(detector.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(
+            detector.parameters(),
+            lr=lr,
+            weight_decay=weight_decay
+        )
         self.criterion = nn.CrossEntropyLoss()
+
+        # 學習率調度器
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='min',
+            patience=10,
+            factor=0.5
+        )
 
         # 確保分類模型在評估模式
         self.classifier_model.eval()
@@ -160,9 +173,9 @@ class DetectorTrainer:
 
         return X, y
 
-    def train(self, X_train, y_train, X_val, y_val, epochs=100, batch_size=1):
+    def train(self, X_train, y_train, X_val, y_val, epochs=100, batch_size=32):
         """
-        訓練檢測器
+        訓練檢測器（加入 Early Stopping 和梯度裁剪）
 
         Args:
             X_train: 訓練特徵 (N_train, num_classes)
@@ -170,7 +183,7 @@ class DetectorTrainer:
             X_val: 驗證特徵 (N_val, num_classes)
             y_val: 驗證標籤 (N_val,)
             epochs: 訓練輪數
-            batch_size: 訓練批次大小（注意：這是訓練檢測器的 batch size）
+            batch_size: 訓練批次大小
 
         Returns:
             best_val_acc: 最佳驗證準確率
@@ -187,8 +200,12 @@ class DetectorTrainer:
         )
 
         best_val_acc = 0.0
+        best_val_loss = float('inf')
+        patience_counter = 0
+        patience = 50 # Early stopping patience
 
         print(f"\n[INFO] Training detector for {epochs} epochs...")
+        print(f"[INFO] Batch size: {batch_size}, Learning rate: {self.optimizer.param_groups[0]['lr']}")
 
         for epoch in range(epochs):
             # 訓練階段
@@ -208,6 +225,10 @@ class DetectorTrainer:
 
                 # 反向傳播
                 loss.backward()
+
+                # 梯度裁剪
+                torch.nn.utils.clip_grad_norm_(self.detector.parameters(), max_norm=1.0)
+
                 self.optimizer.step()
 
                 # 統計
@@ -220,24 +241,82 @@ class DetectorTrainer:
             avg_train_loss = train_loss / len(train_loader)
 
             # 驗證階段
-            val_acc = self.evaluate(val_loader)
+            val_loss, val_acc = self.evaluate_with_loss(val_loader)
 
-            # 更新最佳模型
-            if val_acc > best_val_acc:
+            # 學習率調度
+            self.scheduler.step(val_loss)
+
+            # Early Stopping
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
                 best_val_acc = val_acc
+                patience_counter = 0
+
+                # 保存最佳模型
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': self.detector.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'val_loss': val_loss,
+                    'val_acc': val_acc,
+                }, 'best_adversarial_detector.pth')
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"\n[INFO] Early stopping triggered at epoch {epoch + 1}")
+                    break
 
             # 打印進度
             if (epoch + 1) % 10 == 0 or epoch == 0:
-                print(f"  Epoch [{epoch+1:3d}/{epochs}] "
+                print(f"  Epoch [{epoch + 1:3d}/{epochs}] "
                       f"Train Loss: {avg_train_loss:.4f} | "
                       f"Train Acc: {train_acc:6.2f}% | "
+                      f"Val Loss: {val_loss:.4f} | "
                       f"Val Acc: {val_acc:6.2f}% | "
                       f"Best: {best_val_acc:6.2f}%")
 
         print(f"\n[RESULT] Training completed!")
         print(f"  Best Validation Accuracy: {best_val_acc:.2f}%")
 
+        # 載入最佳模型
+        checkpoint = torch.load('best_adversarial_detector.pth', weights_only=True)
+        self.detector.load_state_dict(checkpoint['model_state_dict'])
+
         return best_val_acc
+
+    def evaluate_with_loss(self, dataloader):
+        """
+        評估檢測器（返回 loss 和 accuracy）
+
+        Args:
+            dataloader: DataLoader
+
+        Returns:
+            loss: 平均損失
+            accuracy: 準確率
+        """
+        self.detector.eval()
+        correct = 0
+        total = 0
+        running_loss = 0.0
+
+        with torch.no_grad():
+            for batch_X, batch_y in dataloader:
+                batch_X = batch_X.to(self.device)
+                batch_y = batch_y.to(self.device)
+
+                outputs = self.detector(batch_X)
+                loss = self.criterion(outputs, batch_y)
+
+                running_loss += loss.item()
+                _, predicted = outputs.max(1)
+
+                total += batch_y.size(0)
+                correct += predicted.eq(batch_y).sum().item()
+
+        avg_loss = running_loss / len(dataloader)
+        accuracy = 100. * correct / total
+        return avg_loss, accuracy
 
     def evaluate(self, dataloader):
         """

@@ -212,24 +212,26 @@ def main():
 
     # 初始化檢測器
     detector = AdversarialDetectorMLP(
-        num_classes=Config.NUM_CLASSES,  # 10 (CIFAR-10)
-        num_attack_types=len(Config.ATTACK_TYPES),  # 8 (Clean + 7 attacks)
-        hidden_dim=Config.DETECTOR_HIDDEN_DIM,
+        num_classes=Config.NUM_CLASSES,
+        num_attack_types=len(Config.ATTACK_TYPES),
+        hidden_dims=Config.DETECTOR_HIDDEN_DIMS,  # 使用列表
         dropout=Config.DETECTOR_DROPOUT
     ).to(device)
 
     print(f"[INFO] Detector Architecture:")
     print(f"  Input: Log-softmax values ({Config.NUM_CLASSES} dimensions)")
-    print(f"  Hidden: {Config.DETECTOR_HIDDEN_DIM} -> {Config.DETECTOR_HIDDEN_DIM * 2} -> {Config.DETECTOR_HIDDEN_DIM}")
+    print(f"  Hidden layers: {Config.DETECTOR_HIDDEN_DIMS}")
     print(f"  Output: {len(Config.ATTACK_TYPES)} attack types")
+    print(f"  Dropout: {Config.DETECTOR_DROPOUT}")
     print(f"  Parameters: {sum(p.numel() for p in detector.parameters()):,}")
 
-    # 初始化訓練器（傳入分類模型）
+    # 初始化訓練器
     detector_trainer = DetectorTrainer(
         detector=detector,
         classifier_model=model,
         device=device,
         lr=Config.DETECTOR_LR,
+        weight_decay=Config.DETECTOR_WEIGHT_DECAY,
         feature_batch_size=Config.DETECTOR_FEATURE_BATCH_SIZE
     )
 
@@ -244,10 +246,11 @@ def main():
     print(f"  Test set: {len(X_test)} samples")
 
     # 訓練檢測器
+    # 訓練時使用更大的 batch size
     best_acc = detector_trainer.train(
         X_train, y_train, X_test, y_test,
         epochs=Config.DETECTOR_EPOCHS,
-        batch_size=4
+        batch_size=32
     )
 
     # 保存檢測器
@@ -320,7 +323,7 @@ def main():
         f.write(f"Training Epochs: {Config.LB_EPOCHS}\n")
         f.write(f"Beta (β): {Config.LB_BETA}\n")
         f.write(f"Sigma (σ): {Config.LB_SIGMA:.4f}\n")
-        f.write(f"Detector Hidden Dim: {Config.DETECTOR_HIDDEN_DIM}\n")
+        f.write(f"Detector Hidden Dim: {Config.DETECTOR_HIDDEN_DIMS}\n")
         f.write(f"Detector Epochs: {Config.DETECTOR_EPOCHS}\n\n")
 
         # 魯棒性結果
