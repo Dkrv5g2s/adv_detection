@@ -65,8 +65,10 @@ class LogitBalancingTrainer:
             self.optimizer.zero_grad()
             outputs = self.model(inputs_noisy)
 
-            # Logit Balancing Loss (Algorithm 1 + Eq. 7)
+            # # Logit Balancing Loss
             loss = self._logit_balancing_loss(outputs, targets)
+
+
 
             loss.backward()
             self.optimizer.step()
@@ -142,6 +144,15 @@ class LogitBalancingTrainer:
                 # Logit Balancing Loss (Eq. 7)
                 # Loss_LB = β × SD × s_t
                 loss[idx] = self.beta * std_dev * s_t
+                # # 獲取排除目標類別的 logits
+                # logits_without_target = outputs[idx][mask]
+                #
+                # # 計算標準差 (SD)
+                # std_dev = torch.std(logits_without_target)
+                #
+                # # Logit 標準差作為損失
+                # # Loss_LB = β × SD
+                # loss[idx] = self.beta * std_dev
 
         # ========== 預測錯誤：Cross-Entropy Loss (Eq. 5) ==========
         if (~correct_mask).any():

@@ -155,6 +155,80 @@ def compute_log_softmax_stats(model, images, device, feature_batch_size=60):
 
     return stats
 
+def compute_logits_stats(model, images, device, feature_batch_size=60):
+    """
+    計算 logits 統計數據（批次平均）
+
+    Args:
+        model: 分類模型
+        images: numpy array (N, 3, 32, 32)
+        device: 計算設備
+        feature_batch_size: 批次大小（預設 60）
+
+    Returns:
+        stats: dict，包含 min, max, mean, std（基於批次平均）
+    """
+    if isinstance(images, np.ndarray):
+        images = torch.FloatTensor(images)
+
+    images = images.to(device)
+    num_samples = len(images)
+
+    model.eval()
+
+    # 儲存每個批次的統計值
+    batch_mins = []
+    batch_maxs = []
+    batch_means = []
+    batch_stds = []
+
+    with torch.no_grad():
+        for i in range(0, num_samples, feature_batch_size):
+            batch_images = images[i:i + feature_batch_size]
+
+            # 如果最後一批不足 batch_size，跳過
+            if len(batch_images) < feature_batch_size:
+                continue
+
+            # 提取 logits
+            logits = model(batch_images)  # (batch_size, num_classes)
+
+            # 對每個樣本排序
+            logits_sorted, _ = torch.sort(logits, dim=1)
+
+            # 計算該批次的平均值（對每個位置求平均）
+            batch_avg = logits.mean(dim=0)  # (num_classes,)
+
+            # 記錄該批次平均的統計值
+            batch_mins.append(batch_avg.min().item())  # 最小值
+            batch_maxs.append(batch_avg.max().item())  # 最大值
+            batch_means.append(batch_avg.mean().item())  # 平均值
+            batch_stds.append(batch_avg.std().item())  # 標準差
+
+    # 計算所有批次的統計
+    if len(batch_mins) > 0:
+        stats = {
+            'avg_min': np.mean(batch_mins),
+            'avg_max': np.mean(batch_maxs),
+            'avg_mean': np.mean(batch_means),
+            'avg_std': np.mean(batch_stds),
+            'batch_mins': batch_mins,  # 用於繪圖
+            'batch_maxs': batch_maxs,  # 用於繪圖
+            'batch_stds': batch_stds  # 用於繪圖
+        }
+    else:
+        stats = {
+            'avg_min': 0.0,
+            'avg_max': 0.0,
+            'avg_mean': 0.0,
+            'avg_std': 0.0,
+            'batch_mins': [],
+            'batch_maxs': [],
+            'batch_stds': []
+        }
+
+    return stats
+
 
 # ========== 對抗樣本緩存相關函數 ==========
 

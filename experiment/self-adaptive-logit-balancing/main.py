@@ -97,10 +97,10 @@ def main():
     print(f"[INFO] Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # 嘗試載入已訓練的模型，若失敗則重新訓練
-    if os.path.exists(Config.MODEL_SAVE_PATH):
-        print(f"[INFO] Loading existing model from {Config.MODEL_SAVE_PATH}...")
+    if os.path.exists(Config.LB_MODEL_SAVE_PATH):
+        print(f"[INFO] Loading existing model from {Config.LB_MODEL_SAVE_PATH}...")
         try:
-            model = load_model(model, Config.MODEL_SAVE_PATH, device)
+            model = load_model(model, Config.LB_MODEL_SAVE_PATH, device)
             print(f"[SUCCESS] Model loaded successfully!")
         except Exception as e:
             print(f"[WARNING] Failed to load model: {e}")
@@ -113,7 +113,7 @@ def main():
                 lr=Config.LB_LR
             )
             model = trainer.train(train_loader, epochs=Config.LB_EPOCHS)
-            save_model(model, Config.MODEL_SAVE_PATH)
+            save_model(model, Config.LB_MODEL_SAVE_PATH)
     else:
         print(f"[INFO] No existing model found. Training new model...")
         trainer = LogitBalancingTrainer(
@@ -124,7 +124,7 @@ def main():
             lr=Config.LB_LR
         )
         model = trainer.train(train_loader, epochs=Config.LB_EPOCHS)
-        save_model(model, Config.MODEL_SAVE_PATH)
+        save_model(model, Config.LB_MODEL_SAVE_PATH)
 
     # 評估乾淨數據準確率
     clean_acc = evaluate_model_accuracy(model, test_loader, device)

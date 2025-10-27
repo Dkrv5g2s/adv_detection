@@ -1,0 +1,74 @@
+======================================================================
+Self-Adaptive Logit Balancing Training and Adversarial Detection
+Experiment Report
+======================================================================
+
+1. Configuration
+----------------------------------------------------------------------
+Model: WideResNet-34-10
+Dataset: CIFAR-10
+Training Epochs: 100
+Beta (β): 0.02
+Sigma (σ): 0.0941
+Detector Hidden Dim: [64, 128, 64]
+Detector Epochs: 200
+
+2. Model Robustness Results
+----------------------------------------------------------------------
+Clean          :  83.69%
+PGD-Linf       :  51.10%
+PGD-L2         :  48.65%
+APGD-Linf      :  22.76%
+Square-Linf    :  28.38%
+APGDT-Linf     :   6.42%
+FAB-Linf       :  38.81%
+CW-L2          :  63.63%
+
+3. Detector Performance
+----------------------------------------------------------------------
+Overall Accuracy: 65.41%
+
+Per-Class Accuracy:
+  Clean          :  68.75%
+  PGD-Linf       :  87.50%
+  PGD-L2         :  41.18%
+  APGD-Linf      :  94.12%
+  APGDT-Linf     :  82.35%
+  Square-Linf    :  81.25%
+  FAB-Linf       :  41.18%
+  CW-L2          :  29.41%
+
+4. Confusion Matrix (Percentages)
+----------------------------------------------------------------------
+True \ Pred      Clean  PGD-Linf    PGD-L2 APGD-LinfAPGDT-LinfSquare-Linf  FAB-Linf     CW-L2
+Clean            68.8%      0.0%      0.0%      0.0%      0.0%      6.2%      6.2%     18.8%
+PGD-Linf          6.2%     87.5%      0.0%      0.0%      6.2%      0.0%      0.0%      0.0%
+PGD-L2            0.0%     47.1%     41.2%      0.0%      5.9%      5.9%      0.0%      0.0%
+APGD-Linf         0.0%      0.0%      0.0%     94.1%      0.0%      5.9%      0.0%      0.0%
+APGDT-Linf       11.8%      5.9%      0.0%      0.0%     82.4%      0.0%      0.0%      0.0%
+Square-Linf       0.0%      0.0%      0.0%      0.0%      0.0%     81.2%      6.2%     12.5%
+FAB-Linf         17.6%      0.0%      0.0%      0.0%      5.9%      5.9%     41.2%     29.4%
+CW-L2            41.2%      0.0%      0.0%      0.0%      0.0%     11.8%     17.6%     29.4%
+
+5. Log-Softmax Distribution Statistics
+----------------------------------------------------------------------
+Clean:
+  Min: -1.2322, Max: -0.2987, Mean: -0.9401, Std: 0.3299
+PGD-Linf:
+  Min: -1.1641, Max: -0.1502, Mean: -0.8263, Std: 0.3477
+PGD-L2:
+  Min: -1.3503, Max: -0.2018, Mean: -0.9374, Std: 0.3875
+APGD-Linf:
+  Min: -2.0759, Max: -0.3940, Mean: -1.4820, Std: 0.5804
+Square-Linf:
+  Min: -1.5857, Max: -0.5543, Mean: -1.2429, Std: 0.3479
+APGDT-Linf:
+  Min: -1.3510, Max: -0.3207, Mean: -0.9795, Std: 0.3538
+FAB-Linf:
+  Min: -1.2966, Max: -0.3578, Mean: -0.9994, Std: 0.3213
+CW-L2:
+  Min: -1.3147, Max: -0.3375, Mean: -1.0081, Std: 0.3419
+
+======================================================================
+Experiment Completed Successfully!
+======================================================================

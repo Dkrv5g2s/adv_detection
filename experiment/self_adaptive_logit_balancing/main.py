@@ -97,10 +97,10 @@ def main():
     print(f"[INFO] Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # 嘗試載入已訓練的模型，若失敗則重新訓練
-    if os.path.exists(Config.MODEL_SAVE_PATH):
-        print(f"[INFO] Loading existing model from {Config.MODEL_SAVE_PATH}...")
+    if os.path.exists(Config.LB_MODEL_SAVE_PATH):
+        print(f"[INFO] Loading existing model from {Config.LB_MODEL_SAVE_PATH}...")
         try:
-            model = load_model(model, Config.MODEL_SAVE_PATH, device)
+            model = load_model(model, Config.LB_MODEL_SAVE_PATH, device)
             print(f"[SUCCESS] Model loaded successfully!")
         except Exception as e:
             print(f"[WARNING] Failed to load model: {e}")
@@ -113,7 +113,7 @@ def main():
                 lr=Config.LB_LR
             )
             model = trainer.train(train_loader, epochs=Config.LB_EPOCHS)
-            save_model(model, Config.MODEL_SAVE_PATH)
+            save_model(model, Config.LB_MODEL_SAVE_PATH)
     else:
         print(f"[INFO] No existing model found. Training new model...")
         trainer = LogitBalancingTrainer(
@@ -124,7 +124,7 @@ def main():
             lr=Config.LB_LR
         )
         model = trainer.train(train_loader, epochs=Config.LB_EPOCHS)
-        save_model(model, Config.MODEL_SAVE_PATH)
+        save_model(model, Config.LB_MODEL_SAVE_PATH)
 
     # 評估乾淨數據準確率
     clean_acc = evaluate_model_accuracy(model, test_loader, device)
@@ -139,9 +139,25 @@ def main():
     from utils.helpers import print_cache_summary
     print_cache_summary(Config.ADVERSARIAL_CACHE_DIR)
 
+    # 從 Config.SOURCE_MODEL_SAVE_PATH 加載預訓練模型
+    source_model = WideResNet(
+        depth=Config.MODEL_DEPTH,
+        widen_factor=Config.MODEL_WIDEN_FACTOR,
+        dropout_rate=Config.MODEL_DROPOUT,
+        num_classes=Config.NUM_CLASSES
+    ).to(device)
+
+    print(f"[INFO] Loading source model from {Config.SOURCE_MODEL_SAVE_PATH}...")
+    try:
+        source_model = load_model(source_model, Config.SOURCE_MODEL_SAVE_PATH, device)
+        print(f"[SUCCESS] Source model loaded successfully!")
+    except Exception as e:
+        print(f"[ERROR] Failed to load source model: {e}")
+        sys.exit(1)  # 如果無法加載模型，直接退出程序，避免後續執行錯誤
+
     # 初始化攻擊生成器（啟用緩存）
     attack_gen = AttackGenerator(
-        model=model,
+        model=source_model,
         device=device,
         use_cache=Config.USE_CACHE
     )
@@ -197,6 +213,7 @@ def main():
 
     distribution_stats = {}
     for attack_name, data_info in adversarial_data.items():
+
         stats = compute_log_softmax_stats(
             model, data_info['images'], device, feature_batch_size=Config.DETECTOR_FEATURE_BATCH_SIZE
         )
@@ -254,8 +271,8 @@ def main():
     )
 
     # 保存檢測器
-    save_model(detector, Config.DETECTOR_SAVE_PATH)
-    print(f"[INFO] Detector saved to {Config.DETECTOR_SAVE_PATH}")
+    # save_model(detector, Config.DETECTOR_SAVE_PATH)
+    # print(f"[INFO] Detector saved to {Config.DETECTOR_SAVE_PATH}")
 
     # ==================== 步驟 7: 評估檢測器 ====================
     print(f"\n{'='*70}")

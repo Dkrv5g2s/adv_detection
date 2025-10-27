@@ -106,6 +106,60 @@ class DetectorTrainer:
 
         return batch_features
 
+    def extract_logits_features_batch_avg(self, images):
+        """
+        從圖像中提取 logits 特徵（批次平均）
+
+        論文方法：
+        1. 提取每個樣本的 logits 值
+        2. 對所有樣本的 logits 值求平均
+
+        Args:
+            images: numpy array (N, 3, 32, 32) 或 torch tensor
+
+        Returns:
+            logits_features: torch tensor (N//batch_size, num_classes)
+                每個特徵是 batch_size 個樣本的 logits 平均值
+        """
+        # 轉換為 tensor
+        if isinstance(images, np.ndarray):
+            images = torch.FloatTensor(images)
+
+        images = images.to(self.device)
+        num_samples = len(images)
+
+        # 提取特徵
+        self.classifier_model.eval()
+        batch_features_list = []
+
+        with torch.no_grad():
+            # 按照 batch_size 分批處理
+            for i in range(0, num_samples, self.feature_batch_size):
+                batch_images = images[i:i + self.feature_batch_size]
+
+                # 如果最後一批不足 batch_size，跳過
+                if len(batch_images) < self.feature_batch_size:
+                    continue
+
+                # 提取 logits
+                logits = self.classifier_model(batch_images)  # (batch_size, num_classes)
+
+                # 對每個樣本排序
+                logits_sorted, _ = torch.sort(logits, dim=1)
+
+                # 計算該批次的 logits 平均值
+                batch_avg = logits.mean(dim=0, keepdim=True)  # (1, num_classes)
+
+                batch_features_list.append(batch_avg)
+
+        # 合併所有批次的平均特徵
+        if len(batch_features_list) > 0:
+            batch_features = torch.cat(batch_features_list, dim=0)  # (num_batches, num_classes)
+        else:
+            batch_features = torch.empty(0, logits.shape[1]).to(self.device)
+
+        return batch_features
+
     def prepare_training_data(self, adversarial_data):
         """
         準備訓練數據（使用批次平均）
@@ -147,6 +201,8 @@ class DetectorTrainer:
 
             # 提取批次平均特徵
             batch_features = self.extract_log_softmax_features_batch_avg(images)
+            # # 提取批次 logits 平均值
+            # batch_features = self.extract_logits_features_batch_avg(images)
             num_batches = len(batch_features)
 
             # 創建標籤（每個批次一個標籤）
@@ -259,7 +315,7 @@ class DetectorTrainer:
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'val_loss': val_loss,
                     'val_acc': val_acc,
-                }, 'best_adversarial_detector.pth')
+                }, 'adversarial_detector.pth')
             else:
                 patience_counter += 1
                 if patience_counter >= patience:
@@ -279,7 +335,7 @@ class DetectorTrainer:
         print(f"  Best Validation Accuracy: {best_val_acc:.2f}%")
 
         # 載入最佳模型
-        checkpoint = torch.load('best_adversarial_detector.pth', weights_only=True)
+        checkpoint = torch.load('adversarial_detector.pth', weights_only=True)
         self.detector.load_state_dict(checkpoint['model_state_dict'])
 
         return best_val_acc

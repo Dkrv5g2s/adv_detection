@@ -139,7 +139,7 @@ class AttackGenerator:
 
         adversarial_data = {}
         use_cache = self.use_cache and cache_dir is not None and not force_regenerate
-        model_name = os.path.splitext(os.path.basename(Config.MODEL_SAVE_PATH))[0]
+        model_name = os.path.splitext(os.path.basename(Config.SOURCE_MODEL_SAVE_PATH))[0]
 
         for attack_name, attack_func in attacks.items():
             print(f"\n[INFO] Processing {attack_name} samples...")
