@@ -63,7 +63,7 @@ class Config:
 
 
     # 保存路徑
-    SOURCE_MODEL_SAVE_PATH = 'logit_balancing_model(82.65).pth'
+    SOURCE_MODEL_SAVE_PATH = 'source_model.pth'
     LB_MODEL_SAVE_PATH = 'logit_balancing_model(82.65).pth'
     DETECTOR_SAVE_PATH = 'adversarial_detector.pth'
     RESULTS_DIR = './results'

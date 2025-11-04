@@ -1,40 +1,48 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Define the range and interval for x and y (customizable)
-x_start = 1  # Start of x range
-x_end = 2    # End of x range
-x_interval = 0.1  # Interval for x
+# Define f1(x, y) and f2(x, y)
+f1 = np.array([[2, 1, 3],
+               [4, 3, 2],
+               [2, 2, 1]])
+f2 = np.array([[2, 3],
+               [1, 1]])
 
-y_start = 3.5  # Start of y range
-y_end = 7      # End of y range
-y_interval = 0.1  # Interval for y
+# Convolution: flip f2 and compute
+f2_flipped = np.flip(np.flip(f2, axis=0), axis=1)
+convolution_result = np.zeros((f1.shape[0] + f2.shape[0] - 1, f1.shape[1] + f2.shape[1] - 1))
 
-# Generate x and y values based on the custom range and interval
-x = np.arange(x_start, x_end + x_interval, x_interval)
-y = np.arange(y_start, y_end + y_interval, y_interval)
+for i in range(convolution_result.shape[0]):
+    for j in range(convolution_result.shape[1]):
+        for m in range(f2_flipped.shape[0]):
+            for n in range(f2_flipped.shape[1]):
+                if 0 <= i - m < f1.shape[0] and 0 <= j - n < f1.shape[1]:
+                    convolution_result[i, j] += f1[i - m, j - n] * f2_flipped[m, n]
 
-# Create a meshgrid for x and y
-X, Y = np.meshgrid(x, y)
+# Correlation: directly compute without flipping
+correlation_result = np.zeros_like(convolution_result)
 
-# Calculate the difference y-x
-Z = Y - X
+for i in range(correlation_result.shape[0]):
+    for j in range(correlation_result.shape[1]):
+        for m in range(f2.shape[0]):
+            for n in range(f2.shape[1]):
+                if 0 <= i - m < f1.shape[0] and 0 <= j - n < f1.shape[1]:
+                    correlation_result[i, j] += f1[i - m, j - n] * f2[m, n]
 
-# Plot the heatmap
-plt.figure(figsize=(10, 8))
-plt.imshow(Z, cmap='coolwarm', origin='lower', extent=[x_start, x_end, y_start, y_end])
-plt.colorbar(label='y-x Difference')
+# Plot results
+plt.figure(figsize=(12, 6))
 
-# Add axis labels and title
-plt.xticks(np.arange(x_start, x_end + 1, 1))
-plt.yticks(np.arange(y_start, y_end + 1, 1))
-plt.xlabel('x')
-plt.ylabel('y')
-plt.title('Heatmap of y-x Difference (Custom Range)')
+plt.subplot(1, 2, 1)
+plt.title("Convolution Result")
+plt.imshow(convolution_result, cmap='gray', interpolation='none')
+plt.colorbar()
+plt.gca().invert_yaxis()
 
-# Ensure the aspect ratio is equal
-plt.gca().set_aspect('equal', adjustable='box')
+plt.subplot(1, 2, 2)
+plt.title("Correlation Result")
+plt.imshow(correlation_result, cmap='gray', interpolation='none')
+plt.colorbar()
+plt.gca().invert_yaxis()
 
-# Display the heatmap
 plt.tight_layout()
 plt.show()

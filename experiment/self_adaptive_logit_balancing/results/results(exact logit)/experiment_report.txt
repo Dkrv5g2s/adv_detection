@@ -15,59 +15,59 @@ Detector Epochs: 200
 
 2. Model Robustness Results
 ----------------------------------------------------------------------
-Clean          :  83.69%
-PGD-Linf       :  51.10%
-PGD-L2         :  48.65%
-APGD-Linf      :  22.76%
-Square-Linf    :  28.38%
-APGDT-Linf     :   6.42%
-FAB-Linf       :  38.81%
-CW-L2          :  63.63%
+Clean          :  82.43%
+PGD-Linf       :  12.83%
+PGD-L2         :   8.62%
+APGD-Linf      :   2.88%
+Square-Linf    :  10.49%
+APGDT-Linf     :   1.95%
+FAB-Linf       :  32.13%
+CW-L2          :  60.51%
 
 3. Detector Performance
 ----------------------------------------------------------------------
-Overall Accuracy: 65.41%
+Overall Accuracy: 52.63%
 
 Per-Class Accuracy:
-  Clean          :  68.75%
-  PGD-Linf       :  87.50%
-  PGD-L2         :  41.18%
-  APGD-Linf      :  94.12%
-  APGDT-Linf     :  82.35%
-  Square-Linf    :  81.25%
-  FAB-Linf       :  41.18%
-  CW-L2          :  29.41%
+  Clean          :  43.75%
+  PGD-Linf       :  62.50%
+  PGD-L2         :  64.71%
+  APGD-Linf      :  41.18%
+  APGDT-Linf     : 100.00%
+  Square-Linf    :  62.50%
+  FAB-Linf       :  35.29%
+  CW-L2          :  11.76%
 
 4. Confusion Matrix (Percentages)
 ----------------------------------------------------------------------
 True \ Pred      Clean  PGD-Linf    PGD-L2 APGD-LinfAPGDT-LinfSquare-Linf  FAB-Linf     CW-L2
-Clean            68.8%      0.0%      0.0%      0.0%      0.0%      6.2%      6.2%     18.8%
-PGD-Linf          6.2%     87.5%      0.0%      0.0%      6.2%      0.0%      0.0%      0.0%
-PGD-L2            0.0%     47.1%     41.2%      0.0%      5.9%      5.9%      0.0%      0.0%
-APGD-Linf         0.0%      0.0%      0.0%     94.1%      0.0%      5.9%      0.0%      0.0%
-APGDT-Linf       11.8%      5.9%      0.0%      0.0%     82.4%      0.0%      0.0%      0.0%
-Square-Linf       0.0%      0.0%      0.0%      0.0%      0.0%     81.2%      6.2%     12.5%
-FAB-Linf         17.6%      0.0%      0.0%      0.0%      5.9%      5.9%     41.2%     29.4%
-CW-L2            41.2%      0.0%      0.0%      0.0%      0.0%     11.8%     17.6%     29.4%
+Clean            43.8%      0.0%      0.0%      0.0%      0.0%     18.8%     12.5%     25.0%
+PGD-Linf          0.0%     62.5%     18.8%     18.8%      0.0%      0.0%      0.0%      0.0%
+PGD-L2            5.9%     17.6%     64.7%     11.8%      0.0%      0.0%      0.0%      0.0%
+APGD-Linf         0.0%      5.9%     52.9%     41.2%      0.0%      0.0%      0.0%      0.0%
+APGDT-Linf        0.0%      0.0%      0.0%      0.0%    100.0%      0.0%      0.0%      0.0%
+Square-Linf      12.5%      0.0%      0.0%      0.0%      6.2%     62.5%     12.5%      6.2%
+FAB-Linf         23.5%      0.0%      0.0%      0.0%      0.0%     17.6%     35.3%     23.5%
+CW-L2            70.6%      0.0%      0.0%      0.0%      0.0%      5.9%     11.8%     11.8%
 
 5. Log-Softmax Distribution Statistics
 ----------------------------------------------------------------------
 Clean:
-  Min: -1.2322, Max: -0.2987, Mean: -0.9401, Std: 0.3299
+  Min: -27.4606, Max: -6.1724, Mean: -11.9761, Std: 6.6128
 PGD-Linf:
-  Min: -1.1641, Max: -0.1502, Mean: -0.8263, Std: 0.3477
+  Min: -36.3706, Max: -6.0864, Mean: -15.1137, Std: 8.9448
 PGD-L2:
-  Min: -1.3503, Max: -0.2018, Mean: -0.9374, Std: 0.3875
+  Min: -34.0700, Max: -5.8750, Mean: -14.2911, Std: 8.4039
 APGD-Linf:
-  Min: -2.0759, Max: -0.3940, Mean: -1.4820, Std: 0.5804
+  Min: -34.7289, Max: -6.0858, Mean: -14.5056, Std: 8.4798
 Square-Linf:
-  Min: -1.5857, Max: -0.5543, Mean: -1.2429, Std: 0.3479
+  Min: -26.2608, Max: -6.0131, Mean: -11.5097, Std: 6.2372
 APGDT-Linf:
-  Min: -1.3510, Max: -0.3207, Mean: -0.9795, Std: 0.3538
+  Min: -25.7905, Max: -4.3809, Mean: -10.4404, Std: 6.4539
 FAB-Linf:
-  Min: -1.2966, Max: -0.3578, Mean: -0.9994, Std: 0.3213
+  Min: -26.8878, Max: -5.9128, Mean: -11.6967, Std: 6.4820
 CW-L2:
-  Min: -1.3147, Max: -0.3375, Mean: -1.0081, Std: 0.3419
+  Min: -27.3695, Max: -6.1536, Mean: -11.9858, Std: 6.5793
 
 ======================================================================
 Experiment Completed Successfully!

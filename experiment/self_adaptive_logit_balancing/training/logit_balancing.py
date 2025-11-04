@@ -144,15 +144,25 @@ class LogitBalancingTrainer:
                 # Logit Balancing Loss (Eq. 7)
                 # Loss_LB = β × SD × s_t
                 loss[idx] = self.beta * std_dev * s_t
+
+
                 # # 獲取排除目標類別的 logits
                 # logits_without_target = outputs[idx][mask]
                 #
-                # # 計算標準差 (SD)
-                # std_dev = torch.std(logits_without_target)
+                # # 歸一化 logits (Z-Score Normalization)
+                # # 計算最小值和最大值
+                # min_val = logits_without_target.min()  # 獲取 logits 的最小值
+                # max_val = logits_without_target.max()  # 獲取 logits 的最大值
                 #
-                # # Logit 標準差作為損失
-                # # Loss_LB = β × SD
-                # loss[idx] = self.beta * std_dev
+                # # 使用 Min-Max Normalization 進行歸一化
+                # normalized_logits = (logits_without_target - min_val) / (max_val - min_val + 1e-8)  # 防止分母為 0
+                #
+                # # 計算標準差 (SD)
+                # std_dev = torch.std(normalized_logits)
+                #
+                # # 自適應權重：目標類別的 softmax 值 (s_t)
+                # s_t = softmax[idx, target_class]
+                # loss[idx] = self.beta * std_dev * s_t
 
         # ========== 預測錯誤：Cross-Entropy Loss (Eq. 5) ==========
         if (~correct_mask).any():
