@@ -105,10 +105,10 @@ def der_loss(model, x, x_adv, y, gamma=0.0):
 # ==================== Attack Functions (論文設定) ====================
 def rs_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None):
     """
-    RS-FGSM: Random Start + FGSM
+    RS-FGSM: Random Start + FGSM (與 Wong et al. 2020 完全一致)
 
     Reference: Wong et al. 2020 "Fast is better than free"
-    Algorithm 1: FGSM adversarial training with random start
+    GitHub: https://github.com/locuslab/fast_adversarial
 
     Args:
         model: Neural network model
@@ -118,14 +118,20 @@ def rs_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None):
         alpha: Step size (default: 1.25 * epsilon as per paper)
 
     Returns:
-
         x_adv: Adversarial examples
     """
     if alpha is None:
         alpha = epsilon * 1.25  # Paper recommendation: α = 1.25ε
 
-    # Step 1: Random initialization δ ~ U(-ε, ε)
-    delta = torch.empty_like(x).uniform_(-epsilon, epsilon)
+    # Step 1: Initialize δ = 0 or random
+    delta = torch.zeros_like(x)
+
+    # Random initialization: δ ~ U(-ε, ε) per channel
+    for j in range(x.shape[1]):
+        delta[:, j, :, :].uniform_(-epsilon, epsilon)
+
+    # Clamp to valid image range [0,1]
+    delta = torch.clamp(delta, 0 - x, 1 - x)
     delta.requires_grad = True
 
     # Step 2: Compute gradient on x + δ
@@ -135,23 +141,26 @@ def rs_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None):
 
     # Step 3: FGSM update: δ = δ + α · sign(∇L)
     grad = delta.grad.detach()
-    delta = delta + alpha * grad.sign()
+    delta = delta + alpha * torch.sign(grad)
 
     # Step 4: Project δ to ε-ball
     delta = torch.clamp(delta, -epsilon, epsilon)
 
-    # Step 5: Generate adversarial example and clip to [0,1]
+    # Step 5: Clamp to valid image range [0,1]
+    delta = torch.clamp(delta, 0 - x, 1 - x)
+
+    # Step 6: Generate adversarial example
     x_adv = torch.clamp(x + delta, 0, 1).detach()
 
     return x_adv
 
 
-def n_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None, k=None):
+def n_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None, unif=2.0, clip=-1):
     """
-    N-FGSM: Noise-FGSM (stronger noise, no intermediate clipping)
+    N-FGSM: Noise-FGSM (stronger noise, optional intermediate clipping)
 
     Reference: de Jorge et al. 2022 "Make Some Noise"
-    Key insight: Use larger initial noise (k > ε) and avoid clipping
+    Key insight: Use larger initial noise (unif * ε) and optionally avoid clipping
 
     Args:
         model: Neural network model
@@ -159,34 +168,49 @@ def n_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None, k=None):
         y: True labels
         epsilon: Maximum perturbation (L∞ norm)
         alpha: Step size (default: ε as per paper)
-        k: Initial noise magnitude (default: 2ε as per paper)
+        unif: Initial noise magnitude multiplier (default: 2.0 -> U(-2ε, 2ε))
+        clip: Clipping radius relative to epsilon (default: -1 means no clipping)
 
     Returns:
         x_adv: Adversarial examples
     """
     if alpha is None:
-        alpha = epsilon  # Paper uses α = ε (not ε + 2/255)
+        alpha = epsilon  # Paper uses α = ε
 
-    if k is None:
-        k = 2 * epsilon  # Paper recommendation: k = 2ε
+    # Step 1: Initialize random noise δ ~ U(-unif*ε, unif*ε)
+    delta = torch.empty_like(x)
+    if unif > 0:
+        # Apply uniform noise per channel
+        for j in range(x.shape[1]):  # Iterate over channels
+            delta[:, j, :, :].uniform_(-unif * epsilon, unif * epsilon)
+    else:
+        delta.zero_()
 
-    # Step 1: Sample larger noise δ ~ U(-k, k) where k > ε
-    delta = torch.empty_like(x).uniform_(-k, k)
+    # Clamp delta to valid image range [0,1]
+    delta = torch.clamp(delta, 0 - x, 1 - x)
     delta.requires_grad = True
 
-    # Step 2: Compute gradient on x + δ (NO clipping before gradient)
+    # Step 2: Compute gradient on x + δ (NO clipping before gradient if clip < 0)
     output = model(x + delta)
     loss = F.cross_entropy(output, y)
-    loss.backward()
+    grad = torch.autograd.grad(loss, delta)[0]
+    grad = grad.detach()
 
     # Step 3: FGSM update: δ = δ + α · sign(∇L)
-    grad = delta.grad.detach()
-    delta = delta + alpha * grad.sign()
+    delta = delta + alpha * torch.sign(grad)
 
-    # Step 4: Project δ to ε-ball
+    # Step 4: Clamp delta to valid image range [0,1]
+    delta = torch.clamp(delta, 0 - x, 1 - x)
+
+    # Step 5: Optional intermediate clipping to clip-ball
+    if clip > 0:
+        clip_radius = clip * epsilon
+        delta = torch.clamp(delta, -clip_radius, clip_radius)
+
+    # Step 6: Final projection to ε-ball
     delta = torch.clamp(delta, -epsilon, epsilon)
 
-    # Step 5: Generate adversarial example and clip to [0,1]
+    # Step 7: Generate adversarial example and clip to [0,1]
     x_adv = torch.clamp(x + delta, 0, 1).detach()
 
     return x_adv
@@ -310,14 +334,11 @@ def load_adversarial_examples(adv_path):
     return data, targets
 
 
-# ==================== Training Functions (論文設定) ====================
+# ==================== Training Functions  ====================
 def train_rs_der(model, train_loader, optimizer, scheduler, epoch, device,
                  epsilon=8 / 255, beta=0.5, gamma=0.0):
     """
-    RS-DER Training (論文設定)
-    - β = 0.5 (ε = 8/255)
-    - γ = 0.0 (CIFAR-10, single-step)
-    - Only apply DER to AAEs
+    RS-DER Training (完全符合 Wong et al. 2020 的實現)
     """
     model.train()
     total_loss = 0
@@ -330,7 +351,8 @@ def train_rs_der(model, train_loader, optimizer, scheduler, epoch, device,
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
 
-        x_adv = rs_fgsm_attack(model, data, target, epsilon=epsilon)
+        # 使用修改後的 RS-FGSM
+        x_adv = rs_fgsm_attack(model, data, target, epsilon=epsilon, alpha=epsilon * 1.25)
 
         is_aae = detect_aae(model, data, x_adv, target)
         aae_count += is_aae.sum().item()
@@ -373,17 +395,16 @@ def train_rs_der(model, train_loader, optimizer, scheduler, epoch, device,
             total_der_loss / total, 100. * correct / total)
 
 
+
 def train_n_der(model, train_loader, optimizer, scheduler, epoch, device,
-                epsilon=8 / 255, beta=0.1, gamma=0.0, k=None):
+                epsilon=8 / 255, beta=0.1, gamma=0.0, unif=2.0, clip=-1):
     """
     N-DER Training
 
     Args:
-        k: Noise magnitude for N-FGSM (預設 2ε)
+        unif: Noise magnitude multiplier for N-FGSM (預設 2.0)
+        clip: Clipping radius relative to epsilon (預設 -1, 不裁剪)
     """
-    if k is None:
-        k = epsilon * 2
-
     model.train()
     total_loss = 0
     total_ce_loss = 0
@@ -395,7 +416,9 @@ def train_n_der(model, train_loader, optimizer, scheduler, epoch, device,
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
 
-        x_adv = n_fgsm_attack(model, data, target, epsilon=epsilon, k=k)
+        # 使用 N-FGSM 生成對抗樣本
+        x_adv = n_fgsm_attack(model, data, target, epsilon=epsilon,
+                              alpha=epsilon, unif=unif, clip=clip)
 
         is_aae = detect_aae(model, data, x_adv, target)
         aae_count += is_aae.sum().item()
@@ -436,6 +459,7 @@ def train_n_der(model, train_loader, optimizer, scheduler, epoch, device,
 
     return (total_loss / total, total_ce_loss / total,
             total_der_loss / total, 100. * correct / total)
+
 
 
 # ==================== Evaluation Functions ====================
