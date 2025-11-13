@@ -117,7 +117,8 @@ def logit_balancing_loss(outputs, targets, beta_lb=0.02):
         beta_lb: Logit Balancing 權重
 
     Returns:
-        loss: 批次平均損失
+        loss_sum: 批次總和損失 (用於反向傳播)
+        loss_mean: 批次平均損失 (用於顯示)
         correct_mask: 預測正確的樣本 mask
     """
     batch_size = outputs.size(0)
@@ -168,7 +169,8 @@ def logit_balancing_loss(outputs, targets, beta_lb=0.02):
             reduction='none'
         )
 
-    return loss.mean(), correct_mask
+    # 返回總和（用於反向傳播）和平均值（用於顯示）
+    return loss.sum(), loss.mean(), correct_mask
 
 
 # ==================== Attack Functions (論文設定) ====================
@@ -405,9 +407,9 @@ def load_adversarial_examples(adv_path):
 
 # ==================== Training Functions  ====================
 def train_rs_der(model, train_loader, optimizer, scheduler, epoch, device,
-                 epsilon=8 / 255, beta=0.5, gamma=0.0, beta_lb=0.02, use_lb=True):
+                 epsilon=8 / 255, beta=0.5, gamma=0.0, beta_lb=0.02):
     """
-    RS-DER Training
+    RS-DER Training with Logit Balancing Loss
     """
     model.train()
     total_loss = 0
@@ -422,6 +424,7 @@ def train_rs_der(model, train_loader, optimizer, scheduler, epoch, device,
 
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
+        batch_size = target.size(0)
 
         # 生成對抗樣本
         x_adv = rs_fgsm_attack(model, data, target, epsilon=epsilon, alpha=epsilon * 1.25)
@@ -430,116 +433,118 @@ def train_rs_der(model, train_loader, optimizer, scheduler, epoch, device,
         is_aae = detect_aae(model, data, x_adv, target)
         aae_count += is_aae.sum().item()
 
-        x_input = x_adv
-
         optimizer.zero_grad()
-        output = model(x_input)
+        output = model(x_adv)
 
-        # 計算 LB Loss（包含 CE 和 LB）
-        if use_lb:
-            lb_ce_loss, correct_mask = logit_balancing_loss(output, target, beta_lb=beta_lb)
+        # ========== 計算 Logit Balancing Loss ==========
+        lb_ce_loss_sum, lb_ce_loss_mean, correct_mask = logit_balancing_loss(
+            output, target, beta_lb=beta_lb
+        )
 
-            # 統計
-            lb_count += correct_mask.sum().item()
-            ce_count += (~correct_mask).sum().item()
+        # 統計
+        lb_count += correct_mask.sum().item()
+        ce_count += (~correct_mask).sum().item()
 
-            # 分別記錄 LB 和 CE 的貢獻
+        # 分別記錄 LB 和 CE 的貢獻
+        with torch.no_grad():
+            if correct_mask.any():
+                correct_indices = correct_mask.nonzero(as_tuple=True)[0]
+                _, lb_loss_only_mean, _ = logit_balancing_loss(
+                    output[correct_indices],
+                    target[correct_indices],
+                    beta_lb=beta_lb
+                )
+                total_lb_loss += lb_loss_only_mean.item() * correct_indices.size(0)
+
+            if (~correct_mask).any():
+                incorrect_indices = (~correct_mask).nonzero(as_tuple=True)[0]
+                ce_loss_only = F.cross_entropy(
+                    output[incorrect_indices],
+                    target[incorrect_indices]
+                )
+                total_ce_loss += ce_loss_only.item() * incorrect_indices.size(0)
+
+        # 用於反向傳播的 loss（總和）
+        base_loss_sum = lb_ce_loss_sum
+        # 用於顯示的 loss（平均）
+        base_loss_mean = lb_ce_loss_mean
+
+        # ========== 計算 DER Loss（只針對 AAE）==========
+        if is_aae.sum() > 0:
+            aae_indices = is_aae.nonzero(as_tuple=True)[0]
+            der_mean = der_loss(model, data[aae_indices], x_adv[aae_indices],
+                                target[aae_indices], gamma=gamma)
+            der_sum = der_mean * aae_indices.size(0)
+
+            # 總損失（用於反向傳播）
+            total_loss_batch_sum = base_loss_sum + beta * der_sum
+            # 平均損失（用於顯示）
+            total_loss_batch_mean = total_loss_batch_sum / batch_size
+
+            total_der_loss += der_mean.item() * aae_indices.size(0)
+        else:
+            total_loss_batch_sum = base_loss_sum
+            total_loss_batch_mean = base_loss_mean
+            der_mean = torch.tensor(0.0)
+
+        # ========== 反向傳播 ==========
+        (total_loss_batch_sum / batch_size).backward()  # 除以 batch_size 以保持梯度尺度
+        optimizer.step()
+        scheduler.step()
+
+        # ========== 統計 ==========
+        total_loss += total_loss_batch_sum.item()
+        pred = output.argmax(dim=1, keepdim=True)
+        correct += pred.eq(target.view_as(pred)).sum().item()
+        total += batch_size
+
+        # ========== 每 100 個 batch 輸出一次 ==========
+        if batch_idx % 100 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+
+            # 計算當前 batch 的 LB 和 CE 用於顯示
             with torch.no_grad():
-                if correct_mask.any():
-                    correct_indices = correct_mask.nonzero(as_tuple=True)[0]
-                    lb_loss_only, _ = logit_balancing_loss(
+                _, _, correct_mask_display = logit_balancing_loss(
+                    output, target, beta_lb=beta_lb
+                )
+
+                if correct_mask_display.any():
+                    correct_indices = correct_mask_display.nonzero(as_tuple=True)[0]
+                    _, lb_display, _ = logit_balancing_loss(
                         output[correct_indices],
                         target[correct_indices],
                         beta_lb=beta_lb
                     )
-                    total_lb_loss += lb_loss_only.item() * correct_indices.size(0)
+                else:
+                    lb_display = torch.tensor(0.0)
 
-                if (~correct_mask).any():
-                    incorrect_indices = (~correct_mask).nonzero(as_tuple=True)[0]
-                    ce_loss_only = F.cross_entropy(
+                if (~correct_mask_display).any():
+                    incorrect_indices = (~correct_mask_display).nonzero(as_tuple=True)[0]
+                    ce_display = F.cross_entropy(
                         output[incorrect_indices],
                         target[incorrect_indices]
                     )
-                    total_ce_loss += ce_loss_only.item() * incorrect_indices.size(0)
+                else:
+                    ce_display = torch.tensor(0.0)
 
-            base_loss = lb_ce_loss
-        else:
-            ce_loss = F.cross_entropy(output, target)
-            total_ce_loss += ce_loss.item() * target.size(0)
-            base_loss = ce_loss
-
-        # 計算 DER Loss（只針對 AAE）
-        if is_aae.sum() > 0:
-            aae_indices = is_aae.nonzero(as_tuple=True)[0]
-            der = der_loss(model, data[aae_indices], x_adv[aae_indices],
-                           target[aae_indices], gamma=gamma)
-            total_loss_batch = base_loss + beta * der
-            total_der_loss += der.item() * target.size(0)
-        else:
-            total_loss_batch = base_loss
-            der = torch.tensor(0.0)
-
-        total_loss_batch.backward()
-        optimizer.step()
-        scheduler.step()
-
-        total_loss += total_loss_batch.item() * target.size(0)
-        pred = output.argmax(dim=1, keepdim=True)
-        correct += pred.eq(target.view_as(pred)).sum().item()
-        total += target.size(0)
-
-        if batch_idx % 100 == 0:
-            current_lr = optimizer.param_groups[0]['lr']
-            if use_lb:
-                with torch.no_grad():
-                    _, correct_mask_display = logit_balancing_loss(output, target, beta_lb=beta_lb)
-
-                    if correct_mask_display.any():
-                        correct_indices = correct_mask_display.nonzero(as_tuple=True)[0]
-                        lb_display, _ = logit_balancing_loss(
-                            output[correct_indices],
-                            target[correct_indices],
-                            beta_lb=beta_lb
-                        )
-                    else:
-                        lb_display = torch.tensor(0.0)
-
-                    if (~correct_mask_display).any():
-                        incorrect_indices = (~correct_mask_display).nonzero(as_tuple=True)[0]
-                        ce_display = F.cross_entropy(
-                            output[incorrect_indices],
-                            target[incorrect_indices]
-                        )
-                    else:
-                        ce_display = torch.tensor(0.0)
-
-                print(f'Epoch {epoch} [{batch_idx}/{len(train_loader)}] '
-                      f'LR: {current_lr:.6f} '
-                      f'Loss: {total_loss_batch.item():.4f} '
-                      f'CE: {ce_display.item():.4f} '
-                      f'LB: {lb_display.item():.4f} '
-                      f'DER: {der.item():.4f} '
-                      f'Acc: {100. * correct / total:.2f}% '
-                      f'AAE: {100. * aae_count / total:.2f}%')
-            else:
-                print(f'Epoch {epoch} [{batch_idx}/{len(train_loader)}] '
-                      f'LR: {current_lr:.6f} '
-                      f'Loss: {total_loss_batch.item():.4f} '
-                      f'CE: {base_loss.item():.4f} '
-                      f'DER: {der.item():.4f} '
-                      f'Acc: {100. * correct / total:.2f}% '
-                      f'AAE: {100. * aae_count / total:.2f}%')
+            print(f'Epoch {epoch} [{batch_idx}/{len(train_loader)}] '
+                  f'LR: {current_lr:.6f} '
+                  f'Loss: {total_loss_batch_mean.item():.4f} '
+                  f'CE: {ce_display.item():.4f} '
+                  f'LB: {lb_display.item():.4f} '
+                  f'DER: {der_mean.item():.4f} '
+                  f'Acc: {100. * correct / total:.2f}% '
+                  f'AAE: {100. * aae_count / total:.2f}%')
 
     return (total_loss / total, total_ce_loss / total,
             total_lb_loss / total, total_der_loss / total, 100. * correct / total)
 
 
 def train_n_der(model, train_loader, optimizer, scheduler, epoch, device,
-                epsilon=8 / 255, beta=0.1, gamma=0.0, k=None, beta_lb=0.02, use_lb=True):
+                epsilon=8 / 255, beta=0.1, gamma=0.0, beta_lb=0.02):
     """
-    N-DER Training
+    N-DER Training with Logit Balancing Loss
     """
-
     model.train()
     total_loss = 0
     total_ce_loss = 0
@@ -553,6 +558,7 @@ def train_n_der(model, train_loader, optimizer, scheduler, epoch, device,
 
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
+        batch_size = target.size(0)
 
         # 生成對抗樣本
         x_adv = n_fgsm_attack(model, data, target, epsilon=epsilon)
@@ -561,105 +567,108 @@ def train_n_der(model, train_loader, optimizer, scheduler, epoch, device,
         is_aae = detect_aae(model, data, x_adv, target)
         aae_count += is_aae.sum().item()
 
-        x_input = x_adv
-
         optimizer.zero_grad()
-        output = model(x_input)
+        output = model(x_adv)
 
-        # 計算 LB Loss（包含 CE 和 LB）
-        if use_lb:
-            lb_ce_loss, correct_mask = logit_balancing_loss(output, target, beta_lb=beta_lb)
+        # ========== 計算 Logit Balancing Loss ==========
+        lb_ce_loss_sum, lb_ce_loss_mean, correct_mask = logit_balancing_loss(
+            output, target, beta_lb=beta_lb
+        )
 
-            # 統計
-            lb_count += correct_mask.sum().item()
-            ce_count += (~correct_mask).sum().item()
+        # 統計
+        lb_count += correct_mask.sum().item()
+        ce_count += (~correct_mask).sum().item()
 
-            # 分別記錄 LB 和 CE 的貢獻
+        # 分別記錄 LB 和 CE 的貢獻
+        with torch.no_grad():
+            if correct_mask.any():
+                correct_indices = correct_mask.nonzero(as_tuple=True)[0]
+                _, lb_loss_only_mean, _ = logit_balancing_loss(
+                    output[correct_indices],
+                    target[correct_indices],
+                    beta_lb=beta_lb
+                )
+                total_lb_loss += lb_loss_only_mean.item() * correct_indices.size(0)
+
+            if (~correct_mask).any():
+                incorrect_indices = (~correct_mask).nonzero(as_tuple=True)[0]
+                ce_loss_only = F.cross_entropy(
+                    output[incorrect_indices],
+                    target[incorrect_indices]
+                )
+                total_ce_loss += ce_loss_only.item() * incorrect_indices.size(0)
+
+        # 用於反向傳播的 loss（總和）
+        base_loss_sum = lb_ce_loss_sum
+        # 用於顯示的 loss（平均）
+        base_loss_mean = lb_ce_loss_mean
+
+        # ========== 計算 DER Loss（只針對 AAE）==========
+        if is_aae.sum() > 0:
+            aae_indices = is_aae.nonzero(as_tuple=True)[0]
+            der_mean = der_loss(model, data[aae_indices], x_adv[aae_indices],
+                                target[aae_indices], gamma=gamma)
+            der_sum = der_mean * aae_indices.size(0)
+
+            # 總損失（用於反向傳播）
+            total_loss_batch_sum = base_loss_sum + beta * der_sum
+            # 平均損失（用於顯示）
+            total_loss_batch_mean = total_loss_batch_sum / batch_size
+
+            total_der_loss += der_mean.item() * aae_indices.size(0)
+        else:
+            total_loss_batch_sum = base_loss_sum
+            total_loss_batch_mean = base_loss_mean
+            der_mean = torch.tensor(0.0)
+
+        # ========== 反向傳播 ==========
+        (total_loss_batch_sum / batch_size).backward()  # 除以 batch_size 以保持梯度尺度
+        optimizer.step()
+        scheduler.step()
+
+        # ========== 統計 ==========
+        total_loss += total_loss_batch_sum.item()
+        pred = output.argmax(dim=1, keepdim=True)
+        correct += pred.eq(target.view_as(pred)).sum().item()
+        total += batch_size
+
+        # ========== 每 100 個 batch 輸出一次 ==========
+        if batch_idx % 100 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+
+            # 計算當前 batch 的 LB 和 CE 用於顯示
             with torch.no_grad():
-                if correct_mask.any():
-                    correct_indices = correct_mask.nonzero(as_tuple=True)[0]
-                    lb_loss_only, _ = logit_balancing_loss(
+                _, _, correct_mask_display = logit_balancing_loss(
+                    output, target, beta_lb=beta_lb
+                )
+
+                if correct_mask_display.any():
+                    correct_indices = correct_mask_display.nonzero(as_tuple=True)[0]
+                    _, lb_display, _ = logit_balancing_loss(
                         output[correct_indices],
                         target[correct_indices],
                         beta_lb=beta_lb
                     )
-                    total_lb_loss += lb_loss_only.item() * correct_indices.size(0)
+                else:
+                    lb_display = torch.tensor(0.0)
 
-                if (~correct_mask).any():
-                    incorrect_indices = (~correct_mask).nonzero(as_tuple=True)[0]
-                    ce_loss_only = F.cross_entropy(
+                if (~correct_mask_display).any():
+                    incorrect_indices = (~correct_mask_display).nonzero(as_tuple=True)[0]
+                    ce_display = F.cross_entropy(
                         output[incorrect_indices],
                         target[incorrect_indices]
                     )
-                    total_ce_loss += ce_loss_only.item() * incorrect_indices.size(0)
+                else:
+                    ce_display = torch.tensor(0.0)
 
-            base_loss = lb_ce_loss
-        else:
-            ce_loss = F.cross_entropy(output, target)
-            total_ce_loss += ce_loss.item() * target.size(0)
-            base_loss = ce_loss
-
-        # 計算 DER Loss（只針對 AAE）
-        if is_aae.sum() > 0:
-            aae_indices = is_aae.nonzero(as_tuple=True)[0]
-            der = der_loss(model, data[aae_indices], x_adv[aae_indices],
-                           target[aae_indices], gamma=gamma)
-            total_loss_batch = base_loss + beta * der
-            total_der_loss += der.item() * target.size(0)
-        else:
-            total_loss_batch = base_loss
-            der = torch.tensor(0.0)
-
-        total_loss_batch.backward()
-        optimizer.step()
-        scheduler.step()
-
-        total_loss += total_loss_batch.item() * target.size(0)
-        pred = output.argmax(dim=1, keepdim=True)
-        correct += pred.eq(target.view_as(pred)).sum().item()
-        total += target.size(0)
-
-        if batch_idx % 100 == 0:
-            current_lr = optimizer.param_groups[0]['lr']
-            if use_lb:
-                with torch.no_grad():
-                    _, correct_mask_display = logit_balancing_loss(output, target, beta_lb=beta_lb)
-
-                    if correct_mask_display.any():
-                        correct_indices = correct_mask_display.nonzero(as_tuple=True)[0]
-                        lb_display, _ = logit_balancing_loss(
-                            output[correct_indices],
-                            target[correct_indices],
-                            beta_lb=beta_lb
-                        )
-                    else:
-                        lb_display = torch.tensor(0.0)
-
-                    if (~correct_mask_display).any():
-                        incorrect_indices = (~correct_mask_display).nonzero(as_tuple=True)[0]
-                        ce_display = F.cross_entropy(
-                            output[incorrect_indices],
-                            target[incorrect_indices]
-                        )
-                    else:
-                        ce_display = torch.tensor(0.0)
-
-                print(f'Epoch {epoch} [{batch_idx}/{len(train_loader)}] '
-                      f'LR: {current_lr:.6f} '
-                      f'Loss: {total_loss_batch.item():.4f} '
-                      f'CE: {ce_display.item():.4f} '
-                      f'LB: {lb_display.item():.4f} '
-                      f'DER: {der.item():.4f} '
-                      f'Acc: {100. * correct / total:.2f}% '
-                      f'AAE: {100. * aae_count / total:.2f}%')
-            else:
-                print(f'Epoch {epoch} [{batch_idx}/{len(train_loader)}] '
-                      f'LR: {current_lr:.6f} '
-                      f'Loss: {total_loss_batch.item():.4f} '
-                      f'CE: {base_loss.item():.4f} '
-                      f'DER: {der.item():.4f} '
-                      f'Acc: {100. * correct / total:.2f}% '
-                      f'AAE: {100. * aae_count / total:.2f}%')
+            print(f'Epoch {epoch} [{batch_idx}/{len(train_loader)}] '
+                  f'LR: {current_lr:.6f} '
+                  f'Loss: {total_loss_batch_mean.item():.4f} '
+                  f'CE: {ce_display.item():.4f} '
+                  f'LB: {lb_display.item():.4f} '
+                  f'DER: {der_mean.item():.4f} '
+                  f'Acc: {100. * correct / total:.2f}% '
+                  f'AAE: {100. * aae_count / total:.2f}%')
 
     return (total_loss / total, total_ce_loss / total,
             total_lb_loss / total, total_der_loss / total, 100. * correct / total)
@@ -738,12 +747,12 @@ def load_checkpoint(model, optimizer, filepath, device):
 
 def train_or_load_model(model_name, model, train_loader, test_loader, device,
                         epsilon=8 / 255, num_epochs=50, train_func=None,
-                        beta=0.5, gamma=0.0, beta_lb=0.02, use_lb=True,
+                        beta=0.5, gamma=0.0, beta_lb=0.02,
                         checkpoint_dir='./checkpoints',
                         lr_schedule='cyclic', lr_min=0.0, lr_max=0.2,
                         momentum=0.9, weight_decay=5e-4):
     """
-    訓練或載入模型
+    訓練或載入模型（永遠使用 LB Loss）
     """
     os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = os.path.join(checkpoint_dir, f'{model_name}_cifar10.pth')
@@ -785,14 +794,12 @@ def train_or_load_model(model_name, model, train_loader, test_loader, device,
     print(f"  Gamma: {gamma}")
     print(f"  Beta_LB: {beta_lb}")
     print(f"  Epsilon: {epsilon}")
-    print(f"  Use LB: {use_lb}")
     print(f"{'=' * 60}")
 
     for epoch in range(1, num_epochs + 1):
         train_loss, train_ce, train_lb, train_der, train_acc = train_func(
             model, train_loader, optimizer, scheduler, epoch, device,
-            epsilon=epsilon, beta=beta, gamma=gamma,
-            beta_lb=beta_lb, use_lb=use_lb
+            epsilon=epsilon, beta=beta, gamma=gamma, beta_lb=beta_lb
         )
 
         if epoch % 10 == 0 or epoch == num_epochs:
@@ -829,8 +836,8 @@ def main():
     print("Epsilon: 8/255")
     print("LR Schedule: CyclicLR (base_lr=0.0, max_lr=0.2)")
     print("Evaluation: Final checkpoint with PGD-20 (α=ε/4) and AutoAttack")
-    print("RS-DER+LB: β_DER=0.5, β_LB=0.02, γ=0.0")
-    print("N-DER+LB: β_DER=0.1, β_LB=0.02, γ=0.0")
+    print("RS-DER+LB: β_DER=1.0, β_LB=0.01, γ=0.0")
+    print("N-DER+LB: β_DER=0.4, β_LB=0.01, γ=0.0")
     print("=" * 60)
 
     print("\nLoading CIFAR-10 dataset...")
@@ -851,7 +858,7 @@ def main():
     num_epochs = 50
 
     print("\n" + "=" * 60)
-    print("RS-DER+LB Model (β_DER=0.5, β_LB=0.02, γ=0.0")
+    print("RS-DER+LB Model (β_DER=1.0, β_LB=0.01, γ=0.0)")
     print("=" * 60)
 
     model_rs = PreActResNet18(num_classes=10).to(device)
@@ -864,10 +871,9 @@ def main():
         epsilon=epsilon,
         num_epochs=num_epochs,
         train_func=train_rs_der,
-        beta=0.5,
+        beta=1.0,
         gamma=0.0,
-        beta_lb=0.02,
-        use_lb=True,
+        beta_lb=0.01,
         checkpoint_dir=checkpoint_dir,
         lr_schedule='cyclic',
         lr_min=0.0,
@@ -896,7 +902,7 @@ def main():
     print(f'AutoAttack Accuracy: {aa_acc_rs:.2f}%')
 
     print("\n" + "=" * 60)
-    print("N-DER+LB Model (β_DER=0.1, β_LB=0.02, γ=0.0)")
+    print("N-DER+LB Model (β_DER=0.4, β_LB=0.01, γ=0.0)")
     print("=" * 60)
 
     model_n = PreActResNet18(num_classes=10).to(device)
@@ -909,10 +915,9 @@ def main():
         epsilon=epsilon,
         num_epochs=num_epochs,
         train_func=train_n_der,
-        beta=0.1,
+        beta=0.4,
         gamma=0.0,
-        beta_lb=0.02,
-        use_lb=True,
+        beta_lb=0.01,
         checkpoint_dir=checkpoint_dir,
         lr_schedule='cyclic',
         lr_min=0.0,
