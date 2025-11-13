@@ -15,59 +15,59 @@ Detector Epochs: 200
 
 2. Model Robustness Results
 ----------------------------------------------------------------------
-Clean          :  82.65%
-PGD-Linf       :  39.53%
-PGD-L2         :  48.59%
-APGD-Linf      :  43.00%
-Square-Linf    :  72.37%
-APGDT-Linf     :  51.26%
-FAB-Linf       :  73.30%
-CW-L2          :  69.11%
+Clean          :  83.93%
+PGD-Linf       :  68.06%
+PGD-L2         :  65.85%
+APGD-Linf      :  56.82%
+Square-Linf    :  67.31%
+APGDT-Linf     :  15.12%
+FAB-Linf       :  79.21%
+CW-L2          :  79.97%
 
 3. Detector Performance
 ----------------------------------------------------------------------
-Overall Accuracy: 54.14%
+Overall Accuracy: 75.94%
 
 Per-Class Accuracy:
-  Clean          :  81.25%
-  PGD-Linf       :  62.50%
-  PGD-L2         :  76.47%
-  APGD-Linf      :  17.65%
-  APGDT-Linf     :  47.06%
-  Square-Linf    :  37.50%
-  FAB-Linf       :  41.18%
-  CW-L2          :  70.59%
+  Clean          :  62.50%
+  PGD-Linf       :  93.75%
+  PGD-L2         :  70.59%
+  APGD-Linf      : 100.00%
+  APGDT-Linf     : 100.00%
+  Square-Linf    : 100.00%
+  FAB-Linf       :  47.06%
+  CW-L2          :  35.29%
 
 4. Confusion Matrix (Percentages)
 ----------------------------------------------------------------------
 True \ Pred      Clean  PGD-Linf    PGD-L2 APGD-LinfAPGDT-LinfSquare-Linf  FAB-Linf     CW-L2
-Clean            81.2%      0.0%     12.5%      0.0%      0.0%      6.2%      0.0%      0.0%
-PGD-Linf          0.0%     62.5%      0.0%      6.2%      6.2%      6.2%     18.8%      0.0%
-PGD-L2           23.5%      0.0%     76.5%      0.0%      0.0%      0.0%      0.0%      0.0%
-APGD-Linf         0.0%     41.2%      0.0%     17.6%     11.8%      0.0%     17.6%     11.8%
-APGDT-Linf        0.0%     17.6%      0.0%     11.8%     47.1%      0.0%     11.8%     11.8%
-Square-Linf       0.0%      0.0%      0.0%      0.0%      0.0%     37.5%     62.5%      0.0%
-FAB-Linf          0.0%      0.0%      0.0%      0.0%      5.9%     29.4%     41.2%     23.5%
-CW-L2             0.0%      5.9%      0.0%      0.0%      0.0%      5.9%     17.6%     70.6%
+Clean            62.5%      0.0%      0.0%      0.0%      0.0%      0.0%     12.5%     25.0%
+PGD-Linf          0.0%     93.8%      6.2%      0.0%      0.0%      0.0%      0.0%      0.0%
+PGD-L2            0.0%     29.4%     70.6%      0.0%      0.0%      0.0%      0.0%      0.0%
+APGD-Linf         0.0%      0.0%      0.0%    100.0%      0.0%      0.0%      0.0%      0.0%
+APGDT-Linf        0.0%      0.0%      0.0%      0.0%    100.0%      0.0%      0.0%      0.0%
+Square-Linf       0.0%      0.0%      0.0%      0.0%      0.0%    100.0%      0.0%      0.0%
+FAB-Linf         17.6%      0.0%      0.0%      0.0%      0.0%      5.9%     47.1%     29.4%
+CW-L2            35.3%      0.0%      0.0%      0.0%      0.0%     11.8%     17.6%     35.3%
 
 5. Log-Softmax Distribution Statistics
 ----------------------------------------------------------------------
 Clean:
-  Min: -1.8431, Max: -0.6066, Mean: -1.4242, Std: 0.4169
+  Min: 1.1900, Max: 4.8773, Mean: 3.6598, Std: 0.1356
 PGD-Linf:
-  Min: -2.5118, Max: -0.9256, Mean: -1.9261, Std: 0.5399
+  Min: 1.8022, Max: 4.5408, Mean: 3.5905, Std: 0.2475
 PGD-L2:
-  Min: -2.0210, Max: -0.5902, Mean: -1.5396, Std: 0.4938
+  Min: 1.8261, Max: 4.8923, Mean: 3.8275, Std: 0.2768
 APGD-Linf:
-  Min: -2.5703, Max: -0.9310, Mean: -1.9712, Std: 0.5473
+  Min: 1.3330, Max: 5.8366, Mean: 4.3673, Std: 0.2792
 Square-Linf:
-  Min: -2.3005, Max: -0.8826, Mean: -1.8057, Std: 0.4640
+  Min: 1.1140, Max: 5.6685, Mean: 4.1943, Std: 0.1564
 APGDT-Linf:
-  Min: -2.6275, Max: -0.9122, Mean: -2.0168, Std: 0.5622
+  Min: 1.1659, Max: 5.6282, Mean: 3.9627, Std: 0.1291
 FAB-Linf:
-  Min: -2.3715, Max: -0.9337, Mean: -1.8622, Std: 0.4714
+  Min: 1.2254, Max: 4.9652, Mean: 3.7257, Std: 0.1411
 CW-L2:
-  Min: -2.5336, Max: -1.0050, Mean: -1.9859, Std: 0.4981
+  Min: 1.1904, Max: 4.9872, Mean: 3.7411, Std: 0.1344
 
 ======================================================================
 Experiment Completed Successfully!

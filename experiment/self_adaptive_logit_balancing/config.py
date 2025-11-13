@@ -30,9 +30,6 @@ class Config:
 
     # 對抗樣本生成配置
     ADV_NUM_SAMPLES = 10000
-    PGD_EPS = 8 / 255
-    PGD_ALPHA = 2 / 255
-    PGD_STEPS = 10
 
     # 攻擊類型（依序）
     ATTACK_TYPES = [
@@ -63,7 +60,7 @@ class Config:
 
 
     # 保存路徑
-    SOURCE_MODEL_SAVE_PATH = 'source_model.pth'
+    SOURCE_MODEL_SAVE_PATH = 'logit_balancing_model(82.65).pth'
     LB_MODEL_SAVE_PATH = 'logit_balancing_model(82.65).pth'
     DETECTOR_SAVE_PATH = 'adversarial_detector.pth'
     RESULTS_DIR = './results'
@@ -114,3 +111,15 @@ class Config:
                     'size_mb': file_size
                 }
         return cache_info
+
+    # Logit Balancing 和 Delta Energy Regularization 訓練配置
+
+    LB_DER_TRAIN_LR = 0.01  # 學習率
+    LB_DER_TRAIN_WEIGHT_DECAY = 5e-4  # 權重衰減
+    LB_DER_TRAIN_EPOCHS = 20  # 訓練輪數
+    LB_DER_MODEL_PATH = './results/LB_DER_model.pth'  # 訓練模型保存路徑
+
+    # PGD 攻擊配置
+    PGD_EPS = 8 / 255  # 擾動幅度
+    PGD_ALPHA = 2 / 255  # 擾動步長
+    PGD_ITERS = 10  # 攻擊迭代次數

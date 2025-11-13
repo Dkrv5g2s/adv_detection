@@ -179,11 +179,13 @@ def main():
     print(f"{'=' * 70}\n")
 
     # ==================== 步驟 4: 評估魯棒性 ====================
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("STEP 4: Evaluating Model Robustness")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     robustness_results = {}
+    gaussian_std = 16 / 255
+
     for attack_name, data_info in adversarial_data.items():
         images = torch.FloatTensor(data_info['images']).to(device)
         labels = torch.LongTensor(data_info['labels']).to(device)
@@ -194,8 +196,13 @@ def main():
 
         with torch.no_grad():
             for i in range(0, len(images), Config.TEST_BATCH_SIZE):
-                batch_images = images[i:i+Config.TEST_BATCH_SIZE]
-                batch_labels = labels[i:i+Config.TEST_BATCH_SIZE]
+                batch_images = images[i:i + Config.TEST_BATCH_SIZE]
+                batch_labels = labels[i:i + Config.TEST_BATCH_SIZE]
+
+                # 加入高斯噪聲
+                noise = torch.randn_like(batch_images) * gaussian_std
+                batch_images = batch_images + noise
+                batch_images = torch.clamp(batch_images, 0, 1)
 
                 outputs = model(batch_images)
                 _, predicted = outputs.max(1)
