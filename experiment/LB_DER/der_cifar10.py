@@ -104,22 +104,7 @@ def der_loss(model, x, x_adv, y, gamma=0.0):
 
 # ==================== Attack Functions (論文設定) ====================
 def rs_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None):
-    """
-    RS-FGSM: Random Start + FGSM (與 Wong et al. 2020 完全一致)
 
-    Reference: Wong et al. 2020 "Fast is better than free"
-    GitHub: https://github.com/locuslab/fast_adversarial
-
-    Args:
-        model: Neural network model
-        x: Clean input images
-        y: True labels
-        epsilon: Maximum perturbation (L∞ norm)
-        alpha: Step size (default: 1.25 * epsilon as per paper)
-
-    Returns:
-        x_adv: Adversarial examples
-    """
     if alpha is None:
         alpha = epsilon * 1.25  # Paper recommendation: α = 1.25ε
 
@@ -155,64 +140,39 @@ def rs_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None):
     return x_adv
 
 
+
+
 def n_fgsm_attack(model, x, y, epsilon=8 / 255, alpha=None, unif=2.0, clip=-1):
-    """
-    N-FGSM: Noise-FGSM (stronger noise, optional intermediate clipping)
-
-    Reference: de Jorge et al. 2022 "Make Some Noise"
-    Key insight: Use larger initial noise (unif * ε) and optionally avoid clipping
-
-    Args:
-        model: Neural network model
-        x: Clean input images
-        y: True labels
-        epsilon: Maximum perturbation (L∞ norm)
-        alpha: Step size (default: ε as per paper)
-        unif: Initial noise magnitude multiplier (default: 2.0 -> U(-2ε, 2ε))
-        clip: Clipping radius relative to epsilon (default: -1 means no clipping)
-
-    Returns:
-        x_adv: Adversarial examples
-    """
     if alpha is None:
-        alpha = epsilon  # Paper uses α = ε
+        alpha = epsilon
 
-    # Step 1: Initialize random noise δ ~ U(-unif*ε, unif*ε)
-    delta = torch.empty_like(x)
+    # Step 1: 初始化隨機噪聲
+    delta = torch.zeros_like(x)
     if unif > 0:
-        # Apply uniform noise per channel
-        for j in range(x.shape[1]):  # Iterate over channels
+        for j in range(x.shape[1]):
             delta[:, j, :, :].uniform_(-unif * epsilon, unif * epsilon)
-    else:
-        delta.zero_()
 
-    # Clamp delta to valid image range [0,1]
     delta = torch.clamp(delta, 0 - x, 1 - x)
     delta.requires_grad = True
 
-    # Step 2: Compute gradient on x + δ (NO clipping before gradient if clip < 0)
+    # Step 2: 計算梯度
     output = model(x + delta)
     loss = F.cross_entropy(output, y)
-    grad = torch.autograd.grad(loss, delta)[0]
-    grad = grad.detach()
+    grad = torch.autograd.grad(loss, delta)[0].detach()
 
-    # Step 3: FGSM update: δ = δ + α · sign(∇L)
+    # Step 3: FGSM 更新
     delta = delta + alpha * torch.sign(grad)
 
-    # Step 4: Clamp delta to valid image range [0,1]
+    # Step 4: 裁剪到 [0,1]
     delta = torch.clamp(delta, 0 - x, 1 - x)
 
-    # Step 5: Optional intermediate clipping to clip-ball
+    # Step 5: 條件性裁剪 (僅當 clip > 0)
     if clip > 0:
         clip_radius = clip * epsilon
         delta = torch.clamp(delta, -clip_radius, clip_radius)
 
-    # Step 6: Final projection to ε-ball
-    delta = torch.clamp(delta, -epsilon, epsilon)
-
-    # Step 7: Generate adversarial example and clip to [0,1]
+    # Step 6: 生成對抗樣本
     x_adv = torch.clamp(x + delta, 0, 1).detach()
-
     return x_adv
 
 
